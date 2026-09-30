@@ -70,7 +70,8 @@ describe("wikipediaCollector", () => {
       },
     });
     await wikipediaCollector.collect(ctx);
-    expect(calls[0]).toMatch(/\/\d{4}-\d{2}-\d{2}\/all$/);
+    // /all-access/yyyy/mm/dd — verified live (200); the old /yyyy-mm-dd/all 404s
+    expect(calls[0]).toMatch(/\/\d{4}\/\d{2}\/\d{2}$/);
     expect(calls[0]).toContain("en.wikipedia");
   });
 

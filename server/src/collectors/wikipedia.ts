@@ -16,8 +16,14 @@ const PageviewsResponse = z.object({ items: z.array(z.object({ articles: z.array
 
 /** yyyy-mm-dd of the previous UTC day (pageviews are complete then). */
 export function previousUtcDay(now: Date = new Date()): string {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
+  const d = new Date(now.getTime() - 86_400_000);
   return d.toISOString().slice(0, 10);
+}
+
+/** Pageviews REST URL: segments are yyyy / mm / dd (verified live — 200). */
+export function pageviewsUrl(day: string): string {
+  const [year, month, date] = day.split("-");
+  return `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${year ?? ""}/${month ?? ""}/${date ?? ""}`;
 }
 
 /** Skip non-article pages (TRD: "skip special/main pages"). */
@@ -43,11 +49,7 @@ export const wikipediaCollector: Collector = {
   label: "Wikipedia",
   requires: [],
   async ping(ctx): Promise<PingResult> {
-    return httpPing(
-      ctx.http,
-      `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${previousUtcDay()}/all`,
-      { accept: "application/json" },
-    );
+    return httpPing(ctx.http, pageviewsUrl(previousUtcDay()), { accept: "application/json" });
   },
   async collect(ctx): Promise<CollectResult> {
     const started = Date.now();
@@ -59,10 +61,7 @@ export const wikipediaCollector: Collector = {
     try {
       const day = previousUtcDay();
       // Recorded fixture is project=en.wikipedia, access=all-access, agent=all.
-      const url =
-        `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${day}` +
-        `/all`;
-      const res = await ctx.http.get(url, { headers: { accept: "application/json" } });
+      const res = await ctx.http.get(pageviewsUrl(day), { headers: { accept: "application/json" } });
       if (res.status !== 200) return finish([], `pageviews HTTP ${String(res.status)}`);
 
       const articles = PageviewsResponse.parse(JSON.parse(res.text)).items[0]?.articles ?? [];

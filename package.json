@@ -20,7 +20,7 @@
     "lint": "npm run lint --workspace=server && npm run lint --workspace=web",
     "doctor": "npm run doctor --workspace=server",
     "setup": "npm run setup --workspace=server",
-    "collect": "npm run collect --workspace=server",
+    "collect": "npm run collect --workspace=server --",
     "rebuild-state": "npm run rebuild-state --workspace=server"
   },
   "devDependencies": {
