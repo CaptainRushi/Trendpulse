@@ -1,0 +1,125 @@
+/**
+ * Connection probes for the setup wizard (and doctor, Phase 9).
+ * Both return {ok:false, error} with actionable copy instead of throwing —
+ * the wizard renders the error verbatim next to a fix hint.
+ */
+import { z } from "zod";
+import { LlmClient, LlmHttpError, LlmTimeoutError, LlmValidationError } from "./client.js";
+
+export interface ProbeSuccess {
+  ok: true;
+  latencyMs: number;
+}
+
+export interface OmnirouteProbeSuccess extends ProbeSuccess {
+  models: string[];
+}
+
+export interface JevProbeSuccess extends ProbeSuccess {
+  model: string;
+}
+
+export interface ProbeFailure {
+  ok: false;
+  latencyMs: number;
+  error: string;
+}
+
+export type OmnirouteProbeResult = OmnirouteProbeSuccess | ProbeFailure;
+export type JevProbeResult = JevProbeSuccess | ProbeFailure;
+
+export interface ProbeOptions {
+  baseUrl: string;
+  apiKey?: string | undefined;
+  timeoutMs?: number | undefined;
+  fetchImpl?: typeof fetch | undefined;
+}
+
+const SampleReply = z.object({ ok: z.boolean() });
+
+/** GET {base}/models — proves the gateway is up, keyed, and serving. */
+export async function testOmnirouteConnection(options: ProbeOptions): Promise<OmnirouteProbeResult> {
+  const started = Date.now();
+  const client = new LlmClient({
+    baseUrl: options.baseUrl,
+    apiKey: options.apiKey ?? "",
+    model: "",
+    clientName: "extractor",
+    timeoutMs: options.timeoutMs ?? 15000,
+    maxAttempts: 1,
+    fetchImpl: options.fetchImpl,
+  });
+  try {
+    const models = await client.listModels();
+    return { ok: true, models, latencyMs: Date.now() - started };
+  } catch (error) {
+    return { ok: false, latencyMs: Date.now() - started, error: friendlyError(options.baseUrl, error) };
+  }
+}
+
+export interface JevProbeOptions extends ProbeOptions {
+  model: string;
+  /** Used when baseUrl is empty (Jev rides OmniRoute). */
+  fallback?: { baseUrl: string; apiKey: string } | undefined;
+}
+
+/** Tiny JSON round-trip — proves the Jev endpoint completes valid JSON. */
+export async function testJevConnection(options: JevProbeOptions): Promise<JevProbeResult> {
+  const started = Date.now();
+  if (options.model.trim() === "") {
+    return { ok: false, latencyMs: 0, error: "Set a Jev model id first (e.g. the model or combo id in OmniRoute)." };
+  }
+  const baseUrl = options.baseUrl.trim() === "" ? (options.fallback?.baseUrl ?? "") : options.baseUrl;
+  if (baseUrl.trim() === "") {
+    return { ok: false, latencyMs: 0, error: "No Jev endpoint configured: set JEV_BASE_URL or the OmniRoute URL." };
+  }
+  const apiKey = options.baseUrl.trim() === "" ? (options.fallback?.apiKey ?? "") : (options.apiKey ?? "");
+  const client = new LlmClient({
+    baseUrl,
+    apiKey,
+    model: options.model,
+    clientName: "jev",
+    timeoutMs: options.timeoutMs ?? 30000,
+    maxAttempts: 1,
+    fetchImpl: options.fetchImpl,
+  });
+  try {
+    await client.json({
+      system: 'Return JSON only: {"ok": true}',
+      user: "Reply with the JSON object.",
+      schema: SampleReply,
+      temperature: 0,
+      tag: "test",
+    });
+    return { ok: true, model: options.model, latencyMs: Date.now() - started };
+  } catch (error) {
+    return { ok: false, latencyMs: Date.now() - started, error: friendlyError(baseUrl, error) };
+  }
+}
+
+/** Map client errors to the wizard's plain-words copy (UI §8). */
+export function friendlyError(baseUrl: string, error: unknown): string {
+  if (error instanceof LlmTimeoutError) {
+    return `Timed out reaching ${baseUrl}. Is the service running there?`;
+  }
+  if (error instanceof LlmValidationError) {
+    return `The endpoint answered but not with valid JSON (${error.message}). Check that the URL points at an OpenAI-compatible chat endpoint and the model id is right.`;
+  }
+  if (error instanceof LlmHttpError) {
+    if (error.status === 401 || error.status === 403) {
+      return `Unauthorized (HTTP ${String(error.status)}) at ${baseUrl}. Check the API key.`;
+    }
+    if (error.status === 429) {
+      return `Rate limited (HTTP 429) at ${baseUrl}. Wait a minute or check the provider quota, then press Test again.`;
+    }
+    if (error.status !== undefined) {
+      return `HTTP ${String(error.status)} from ${baseUrl}: ${error.message}`;
+    }
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network/i.test(error.message)) {
+      return `Not reachable at ${baseUrl}. Start the service (or check the URL) and press Test again.`;
+    }
+    return `${error.message} (${baseUrl})`;
+  }
+  if (error instanceof Error) return `${error.message} (${baseUrl})`;
+  return `Unexpected error talking to ${baseUrl}.`;
+}

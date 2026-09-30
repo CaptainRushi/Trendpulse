@@ -1,8 +1,37 @@
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { testJevConnection, testOmnirouteConnection } from "./llm/probe.js";
 
 export interface AppOptions {
   version: string;
+  /** Jev fallback when the test-jev body leaves base_url empty (server config). */
+  omnirouteBaseUrl?: string | undefined;
+  omnirouteApiKey?: string | undefined;
+}
+
+const TestOmnirouteBody = z.object({
+  base_url: z.string().url(),
+  api_key: z.string().optional(),
+});
+
+const TestJevBody = z.object({
+  base_url: z.string().optional(),
+  api_key: z.string().optional(),
+  model: z.string().min(1),
+});
+
+function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
+  const result = schema.safeParse(body);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const error = new Error(
+      `Invalid request body${issue ? `: ${issue.path.join(".")} ${issue.message}` : ""}`,
+    ) as Error & { statusCode: number };
+    error.statusCode = 400;
+    throw error;
+  }
+  return result.data;
 }
 
 /**
@@ -34,6 +63,29 @@ export function buildApp(options: AppOptions): FastifyInstance {
     next_run_at: null,
     last_run: null,
   }));
+
+  // Setup probes (Phase 2): reachable without setup_complete, never echo keys.
+  app.post("/api/setup/test-omniroute", async (request) => {
+    const body = parseBody(TestOmnirouteBody, request.body);
+    const result = await testOmnirouteConnection({ baseUrl: body.base_url, apiKey: body.api_key });
+    if (!result.ok) return { ok: false, error: result.error, latency_ms: result.latencyMs };
+    return { ok: true, models: result.models, latency_ms: result.latencyMs };
+  });
+
+  app.post("/api/setup/test-jev", async (request) => {
+    const body = parseBody(TestJevBody, request.body);
+    const result = await testJevConnection({
+      baseUrl: body.base_url ?? "",
+      apiKey: body.api_key,
+      model: body.model,
+      fallback:
+        options.omnirouteBaseUrl !== undefined
+          ? { baseUrl: options.omnirouteBaseUrl, apiKey: options.omnirouteApiKey ?? "" }
+          : undefined,
+    });
+    if (!result.ok) return { ok: false, error: result.error, latency_ms: result.latencyMs };
+    return { ok: true, model: result.model, latency_ms: result.latencyMs };
+  });
 
   app.setNotFoundHandler((_request, reply) => {
     reply.code(404).send({

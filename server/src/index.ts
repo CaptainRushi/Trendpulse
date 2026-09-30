@@ -41,7 +41,11 @@ async function main(): Promise<void> {
   const applied = applyMigrations(db);
   if (applied.length > 0) logger.info({ applied }, "applied SQLite migrations");
 
-  const app = buildApp({ version: SERVER_VERSION });
+  const app = buildApp({
+    version: SERVER_VERSION,
+    omnirouteBaseUrl: config.omnirouteBaseUrl,
+    omnirouteApiKey: config.omnirouteApiKey,
+  });
   try {
     await app.listen({ port: config.port, host: config.host });
     logger.info(`TrendPulse listening on http://${config.host}:${String(config.port)}`);
