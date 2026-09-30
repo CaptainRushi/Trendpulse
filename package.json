@@ -1,0 +1,33 @@
+{
+  "name": "trendpulse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TrendPulse — localhost daily trends collector, Jev sorter, Google Sheets store, dashboard.",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,web \"npm run dev --workspace=server\" \"npm run dev --workspace=web\"",
+    "dev:server": "npm run dev --workspace=server",
+    "build": "npm run build --workspace=server && npm run build --workspace=web",
+    "start": "npm run start --workspace=server",
+    "test": "npm run test --workspace=server",
+    "lint": "npm run lint --workspace=server && npm run lint --workspace=web",
+    "doctor": "npm run doctor --workspace=server",
+    "setup": "npm run setup --workspace=server",
+    "collect": "npm run collect --workspace=server",
+    "rebuild-state": "npm run rebuild-state --workspace=server"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.12.0",
+    "concurrently": "^9.0.1",
+    "eslint": "^9.12.0",
+    "prettier": "^3.3.3",
+    "typescript-eslint": "^8.8.1"
+  }
+}

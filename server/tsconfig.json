@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  // Compiles mirror the source tree (dist/src, dist/scripts, dist/test).
+  // Runtime entry is dist/src/index.js; scripts/tests run from source via tsx/vitest.
+  "include": ["src/**/*", "scripts/**/*.ts", "test/**/*"]
+}
