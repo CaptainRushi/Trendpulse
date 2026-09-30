@@ -123,6 +123,7 @@ export const SourceKey = z.enum([
   "producthunt",
   "devto",
 ]);
+export type SourceKey = z.infer<typeof SourceKey>;
 
 export const Category = z.enum([
   "Tech",

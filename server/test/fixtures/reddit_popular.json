@@ -1,0 +1,154 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": "t3_zz9",
+    "dist": 25,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "id": "aa11",
+          "title": "Open-source AI model matches GPT-4 on reasoning benchmarks",
+          "permalink": "/r/technology/comments/aa11/open_source_ai_model_matches_gpt4_on/",
+          "url": "https://example.com/ai-benchmark-2026",
+          "author": "ml_researcher_42",
+          "created_utc": 1790700000,
+          "score": 8421,
+          "num_comments": 613,
+          "subreddit": "technology",
+          "selftext": "",
+          "over_18": false,
+          "stickied": false,
+          "upvote_ratio": 0.94
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "bb22",
+          "title": "I built a tiny tool that turns any RSS feed into a daily brief — feedback welcome",
+          "permalink": "/r/SideProject/comments/bb22/i_built_a_tiny_tool_that_turns_any_rss/",
+          "url": "https://www.reddit.com/r/SideProject/comments/bb22/i_built_a_tiny_tool_that_turns_any_rss/",
+          "author": "weekendhacker",
+          "created_utc": 1790696400,
+          "score": 1204,
+          "num_comments": 218,
+          "subreddit": "SideProject",
+          "selftext": "Been working on this for a month. It reads your feeds, clusters them by topic and emails you one digest every morning. Curious what you'd change first.",
+          "over_18": false,
+          "stickied": false,
+          "upvote_ratio": 0.97
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "cc33",
+          "title": "Weekly discussion thread",
+          "permalink": "/r/programming/comments/cc33/weekly_discussion_thread/",
+          "url": "https://www.reddit.com/r/programming/comments/cc33/weekly_discussion_thread/",
+          "author": "AutoModerator",
+          "created_utc": 1790689200,
+          "score": 45,
+          "num_comments": 92,
+          "subreddit": "programming",
+          "selftext": "Use this thread for casual discussion.",
+          "over_18": false,
+          "stickied": true,
+          "upvote_ratio": 1
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "dd44",
+          "title": "Researchers discover high-temperature superconductor at near-ambient pressure",
+          "permalink": "/r/science/comments/dd44/researchers_discover_high_temperature/",
+          "url": "https://doi.org/10.1038/s41586-026-00000-x",
+          "author": "physicist_jane",
+          "created_utc": 1790682000,
+          "score": 15330,
+          "num_comments": 1876,
+          "subreddit": "science",
+          "selftext": "",
+          "over_18": false,
+          "stickied": false,
+          "upvote_ratio": 0.91
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "ee55",
+          "title": "NSFW example post that should be filtered",
+          "permalink": "/r/all/comments/ee55/nsfw_example_post/",
+          "url": "https://example.com/should-not-appear",
+          "author": "deleted_user",
+          "created_utc": 1790678400,
+          "score": 300,
+          "num_comments": 12,
+          "subreddit": "all",
+          "selftext": "",
+          "over_18": true,
+          "stickied": false,
+          "upvote_ratio": 0.5
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "ff66",
+          "title": "Why local-first software is winning in 2026",
+          "permalink": "/r/LocalLLaMA/comments/ff66/why_local_first_software_is_winning/",
+          "url": "https://blog.example.org/local-first-2026",
+          "author": "edge_computing_fan",
+          "created_utc": 1790671200,
+          "score": 2210,
+          "num_comments": 341,
+          "subreddit": "LocalLLaMA",
+          "selftext": "",
+          "over_18": false,
+          "stickied": false,
+          "upvote_ratio": 0.96
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "gg77",
+          "title": "TIL: The original HTTP spec was written in two months",
+          "permalink": "/r/todayilearned/comments/gg77/til_the_original_http_spec_was/",
+          "url": "https://example.net/http-history",
+          "author": "rfc_reader",
+          "created_utc": 1790664000,
+          "score": 5678,
+          "num_comments": 289,
+          "subreddit": "todayilearned",
+          "selftext": "",
+          "over_18": false,
+          "stickied": false,
+          "upvote_ratio": 0.93
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "hh88",
+          "title": "Show HN: I made a trend dashboard that runs entirely offline",
+          "permalink": "/r/selfhosted/comments/hh88/show_i_made_a_trend_dashboard/",
+          "url": "https://www.reddit.com/r/selfhosted/comments/hh88/show_i_made_a_trend_dashboard/",
+          "author": "selfhost_nina",
+          "created_utc": 1790656800,
+          "score": 987,
+          "num_comments": 154,
+          "subreddit": "selfhosted",
+          "selftext": "SQLite in the browser, no telemetry, one binary.",
+          "over_18": false,
+          "stickied": false,
+          "upvote_ratio": 0.98
+        }
+      }
+    ],
+    "before": null
+  }
+}
