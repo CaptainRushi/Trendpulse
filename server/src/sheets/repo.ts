@@ -1,0 +1,285 @@
+/**
+ * SheetsRepo — all content reads/writes against Google Sheets.
+ * Append-only for raw/sorted/digest/runs_log; the ONLY update the app ever
+ * performs is flipping stale is_latest flags (markLatest), addressed by
+ * scanning run_date + is_latest columns — never by remembered row numbers,
+ * so human row edits elsewhere can't corrupt it.
+ */
+import { SheetsCache } from "./cache.js";
+import { isMissingRangeError } from "./client.js";
+import type { SheetsClient } from "./client.js";
+import {
+  digestRecordToRow,
+  rawRecordToRow,
+  rowToDigestRecord,
+  rowToRawRecord,
+  rowToRunLogRecord,
+  rowToSortedRecord,
+  runLogRecordToRow,
+  sortedRecordToRow,
+  RowParseError,
+} from "./mappers.js";
+import { SheetsWriteQueue } from "./queue.js";
+import {
+  DAILY_DIGEST_TAB,
+  MAX_APPEND_BATCH,
+  RAW_TRENDS_TAB,
+  REQUIRED_TABS,
+  RUNS_LOG_TAB,
+  SORTED_TRENDS_TAB,
+  TAB_HEADERS,
+} from "./schema.js";
+import type {
+  DigestRecord,
+  RawTrendRecord,
+  RunLogRecord,
+  SortedTrendRecord,
+} from "./schema.js";
+
+export interface RepoOptions {
+  spreadsheetId: string;
+  cacheTtlS?: number;
+  queue?: SheetsWriteQueue;
+}
+
+export interface AppendResult {
+  rowsAppended: number;
+  batches: number;
+}
+
+export interface ReadResult<T> {
+  rows: T[];
+  warnings: number;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+export class SheetsRepo {
+  private readonly client: SheetsClient;
+  private readonly spreadsheetId: string;
+  private readonly cache: SheetsCache;
+  private readonly queue: SheetsWriteQueue;
+
+  constructor(client: SheetsClient, options: RepoOptions) {
+    this.client = client;
+    this.spreadsheetId = options.spreadsheetId;
+    this.cache = new SheetsCache(options.cacheTtlS ?? 60);
+    this.queue = options.queue ?? new SheetsWriteQueue();
+  }
+
+  /** Clear the read cache (Sync button, post-run). */
+  sync(): Promise<void> {
+    this.cache.invalidate();
+    return Promise.resolve();
+  }
+
+  /**
+   * Create missing tabs + header rows. Idempotent: existing non-empty headers
+   * are never overwritten (a human may have annotated them).
+   */
+  async init(): Promise<{ created: string[]; headersWritten: string[] }> {
+    const created: string[] = [];
+    const headersWritten: string[] = [];
+    const titles = await this.client.getTabTitles(this.spreadsheetId);
+    for (const tab of REQUIRED_TABS) {
+      if (!titles.includes(tab)) {
+        await this.client.addTab(this.spreadsheetId, tab);
+        created.push(tab);
+      }
+      const first = await this.client.getFirstRow(this.spreadsheetId, tab);
+      if (first === null || first.length === 0 || first.every((c) => c === "")) {
+        const headers = TAB_HEADERS[tab];
+        if (headers === undefined) throw new Error(`unknown tab '${tab}' has no header definition`);
+        await this.client.writeFirstRow(this.spreadsheetId, tab, [...headers]);
+        headersWritten.push(tab);
+      }
+    }
+    return { created, headersWritten };
+  }
+
+  async appendRaw(records: RawTrendRecord[]): Promise<AppendResult> {
+    return this.appendBatched(RAW_TRENDS_TAB, records.map(rawRecordToRow));
+  }
+
+  async appendSorted(records: SortedTrendRecord[]): Promise<AppendResult> {
+    return this.appendBatched(SORTED_TRENDS_TAB, records.map(sortedRecordToRow));
+  }
+
+  async appendDigest(record: DigestRecord): Promise<AppendResult> {
+    return this.appendBatched(DAILY_DIGEST_TAB, [digestRecordToRow(record)]);
+  }
+
+  async appendRunLog(record: RunLogRecord): Promise<AppendResult> {
+    return this.appendBatched(RUNS_LOG_TAB, [runLogRecordToRow(record)]);
+  }
+
+  private async appendBatched(tab: string, rows: string[][]): Promise<AppendResult> {
+    if (rows.length === 0) return { rowsAppended: 0, batches: 0 };
+    const batches = chunk(rows, MAX_APPEND_BATCH);
+    let n = 0;
+    for (const batch of batches) {
+      n += 1;
+      const label = `append ${tab} batch ${String(n)}/${String(batches.length)}`;
+      await this.queue.enqueue(label, () => this.appendWithAutoReinit(tab, batch));
+    }
+    this.cache.invalidate();
+    return { rowsAppended: rows.length, batches: batches.length };
+  }
+
+  /** Deleted tab → init once, retry once. Anything else propagates. */
+  private async appendWithAutoReinit(tab: string, batch: string[][]): Promise<void> {
+    try {
+      await this.client.appendRows(this.spreadsheetId, tab, batch);
+    } catch (error) {
+      if (!isMissingRangeError(error)) throw error;
+      await this.init();
+      await this.client.appendRows(this.spreadsheetId, tab, batch);
+    }
+  }
+
+  async readRaw(filter: { runId?: string } = {}): Promise<ReadResult<RawTrendRecord>> {
+    const key = `raw:${filter.runId ?? ""}`;
+    const cached = this.cache.get<ReadResult<RawTrendRecord>>(key);
+    if (cached) return cached.value;
+    const values = await this.client.getAllValues(this.spreadsheetId, RAW_TRENDS_TAB);
+    const result = parseDataRows(values, rowToRawRecord);
+    const rows =
+      filter.runId === undefined ? result.rows : result.rows.filter((r) => r.run_id === filter.runId);
+    const out = { rows, warnings: result.warnings };
+    this.cache.set(key, out);
+    return out;
+  }
+
+  async readSorted(
+    filter: { runDate?: string; onlyLatest?: boolean } = {},
+  ): Promise<ReadResult<SortedTrendRecord>> {
+    const onlyLatest = filter.onlyLatest ?? true;
+    const key = `sorted:${filter.runDate ?? ""}:${onlyLatest ? "latest" : "all"}`;
+    const cached = this.cache.get<ReadResult<SortedTrendRecord>>(key);
+    if (cached) return cached.value;
+    const values = await this.client.getAllValues(this.spreadsheetId, SORTED_TRENDS_TAB);
+    const result = parseDataRows(values, rowToSortedRecord);
+    const rows = result.rows.filter(
+      (r) =>
+        (filter.runDate === undefined || r.run_date === filter.runDate) &&
+        (!onlyLatest || r.is_latest) &&
+        !r.hidden,
+    );
+    const out = { rows, warnings: result.warnings };
+    this.cache.set(key, out);
+    return out;
+  }
+
+  /** Latest digest row for the date (append-only → last matching row wins). */
+  async readDigest(
+    runDate: string,
+  ): Promise<{ row: DigestRecord | null; warnings: number }> {
+    const key = `digest:${runDate}`;
+    const cached = this.cache.get<{ row: DigestRecord | null; warnings: number }>(key);
+    if (cached) return cached.value;
+    const values = await this.client.getAllValues(this.spreadsheetId, DAILY_DIGEST_TAB);
+    const result = parseDataRows(values, rowToDigestRecord);
+    const matches = result.rows.filter((r) => r.run_date === runDate && r.is_latest);
+    const latest = matches.length > 0 ? matches[matches.length - 1] : null;
+    const out = { row: latest ?? null, warnings: result.warnings };
+    this.cache.set(key, out);
+    return out;
+  }
+
+  /** Full run history, newest last (append-only). Feeds the Runs page. */
+  async readRunLog(): Promise<ReadResult<RunLogRecord>> {
+    const key = "runs:all";
+    const cached = this.cache.get<ReadResult<RunLogRecord>>(key);
+    if (cached) return cached.value;
+    const values = await this.client.getAllValues(this.spreadsheetId, RUNS_LOG_TAB);
+    const out = parseDataRows(values, rowToRunLogRecord);
+    this.cache.set(key, out);
+    return out;
+  }
+
+  /**
+   * Flip is_latest → FALSE on every other run's rows for the date.
+   * The only cell-update the app performs (re-sort flow, TRD §9).
+   */
+  async markLatest(runDate: string, keepRunId: string): Promise<{ flipped: number }> {
+    let flipped = 0;
+    flipped += await this.flipStaleLatest(SORTED_TRENDS_TAB, "run_date", 2, "run_id", 1, "is_latest", 23, runDate, keepRunId);
+    flipped += await this.flipStaleLatest(DAILY_DIGEST_TAB, "run_date", 0, "run_id", 1, "is_latest", 10, runDate, keepRunId);
+    this.cache.invalidate();
+    return { flipped };
+  }
+
+  private async flipStaleLatest(
+    tab: string,
+    dateHeader: string,
+    dateCol: number,
+    idHeader: string,
+    idCol: number,
+    flagHeader: string,
+    flagCol: number,
+    runDate: string,
+    keepRunId: string,
+  ): Promise<number> {
+    const values = await this.client.getAllValues(this.spreadsheetId, tab);
+    const header = values[0];
+    if (header === undefined) return 0;
+    // Verify by header NAME, not assumed position — a human may reorder columns.
+    if (header[dateCol] !== dateHeader || header[idCol] !== idHeader || header[flagCol] !== flagHeader) {
+      throw new Error(
+        `sheets tab '${tab}' has unexpected headers; refusing to flip is_latest (expected ${dateHeader}/${idHeader}/${flagHeader})`,
+      );
+    }
+    const flagLetter = columnLetter(flagCol);
+    const updates: { range: string; values: string[][] }[] = [];
+    values.forEach((row, idx) => {
+      if (idx === 0) return;
+      if (row[dateCol] !== runDate) return;
+      if (row[idCol] === keepRunId) return;
+      if (!isTruthyFlag(row[flagCol])) return;
+      updates.push({ range: `${tab}!${flagLetter}${String(idx + 1)}`, values: [["FALSE"]] });
+    });
+    if (updates.length === 0) return 0;
+    await this.queue.enqueue(`markLatest ${tab} ${runDate}`, () =>
+      this.client.batchUpdate(this.spreadsheetId, updates),
+    );
+    return updates.length;
+  }
+}
+
+function isTruthyFlag(cell: string | undefined): boolean {
+  if (cell === undefined) return false;
+  const s = cell.trim().toLowerCase();
+  return s === "true" || s === "1";
+}
+
+/** Skip row 0 (header); bad rows are counted, never thrown. */
+function parseDataRows<T>(values: string[][], parse: (cells: string[]) => T): ReadResult<T> {
+  const rows: T[] = [];
+  let warnings = 0;
+  values.forEach((cells, idx) => {
+    if (idx === 0) return;
+    if (cells.length === 0 || cells.every((c) => c === "")) return; // blank row, ignore silently
+    try {
+      rows.push(parse(cells));
+    } catch (error) {
+      if (error instanceof RowParseError) warnings += 1;
+      else throw error;
+    }
+  });
+  return { rows, warnings };
+}
+
+function columnLetter(index: number): string {
+  let n = index + 1;
+  let letters = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letters;
+}

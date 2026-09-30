@@ -35,6 +35,8 @@ export default tseslint.config(
     files: ["**/*.test.ts", "**/test/**/*.ts"],
     rules: {
       "@typescript-eslint/no-non-null-assertion": "off",
+      // Fakes and promise-returning test doubles intentionally omit await.
+      "@typescript-eslint/require-await": "off",
     },
   },
 );
