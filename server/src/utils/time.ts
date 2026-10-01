@@ -15,3 +15,11 @@ export function epochSecondsToIso(seconds: number | undefined): string | null {
   if (!seconds) return null;
   return new Date(seconds * 1000).toISOString();
 }
+
+/** YYYY-MM-DD shifted by whole days (UTC math; ISO strings compare lexicographically). */
+export function shiftDate(date: string, days: number): string {
+  const ms =
+    Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) +
+    days * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}

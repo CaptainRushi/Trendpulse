@@ -13,6 +13,7 @@
     "doctor": "tsx scripts/doctor.ts",
     "setup": "tsx scripts/setup.ts",
     "collect": "tsx scripts/collect.ts",
+    "pipeline": "tsx scripts/run.ts",
     "rebuild-state": "tsx scripts/rebuild-state.ts"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "fastify": "^5.2.1",
     "googleapis": "^182.0.0",
     "jsdom": "^30.1.1",
+    "node-cron": "^3.0.3",
     "p-limit": "^7.3.3",
     "p-retry": "^8.0.1",
     "pino": "^9.6.0",
@@ -33,6 +35,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.7.4",
+    "@types/node-cron": "^3.0.11",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.8.1",

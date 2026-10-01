@@ -19,10 +19,12 @@ import {
   sortedRecordToRow,
   RowParseError,
 } from "./mappers.js";
+import { shiftDate } from "../utils/time.js";
 import { SheetsWriteQueue } from "./queue.js";
 import {
   DAILY_DIGEST_TAB,
   MAX_APPEND_BATCH,
+  RAW_TRENDS_HEADERS,
   RAW_TRENDS_TAB,
   REQUIRED_TABS,
   RUNS_LOG_TAB,
@@ -50,6 +52,19 @@ export interface AppendResult {
 export interface ReadResult<T> {
   rows: T[];
   warnings: number;
+}
+
+export interface RetainOptions {
+  runDate: string;
+  retentionDays: number;
+  retentionMode: "archive" | "delete";
+}
+
+export interface RetainResult {
+  archived: number;
+  deleted: number;
+  warnings: number;
+  tabs: string[];
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -213,8 +228,80 @@ export class SheetsRepo {
     return { flipped };
   }
 
-  private async flipStaleLatest(
-    tab: string,
+  /**
+   * Retention for raw_trends (TRD §9): rows with collected_at older than
+   * runDate − retentionDays move to archive_YYYY_MM tabs (archive mode) or
+   * vanish (delete mode). Archive copies land before any deletion, so a
+   * failed copy keeps the rows. Rows with undateable collected_at are kept
+   * and counted as warnings. Deletions run per maximal aged run in
+   * descending order, so sheet indices stay valid.
+   */
+  async retainRaw(options: RetainOptions): Promise<RetainResult> {
+    const empty: RetainResult = { archived: 0, deleted: 0, warnings: 0, tabs: [] };
+    let values: string[][];
+    try {
+      values = await this.client.getAllValues(this.spreadsheetId, RAW_TRENDS_TAB);
+    } catch (error) {
+      if (!isMissingRangeError(error)) throw error;
+      return empty;
+    }
+    const cutoff = shiftDate(options.runDate, -options.retentionDays);
+    const aged: { sheetRow: number; cells: string[] }[] = [];
+    let warnings = 0;
+    values.forEach((cells, index) => {
+      if (index === 0) return; // header
+      const day = (cells[2] ?? "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        warnings += 1;
+        return;
+      }
+      if (day < cutoff) aged.push({ sheetRow: index, cells });
+    });
+    if (aged.length === 0) return { ...empty, warnings };
+
+    const tabs: string[] = [];
+    let archived = 0;
+    if (options.retentionMode === "archive") {
+      const byMonth = new Map<string, string[][]>();
+      for (const row of aged) {
+        const month = (row.cells[2] ?? "").slice(0, 7).replace("-", "_");
+        const list = byMonth.get(month) ?? [];
+        list.push([...row.cells]);
+        byMonth.set(month, list);
+      }
+      const titles = await this.client.getTabTitles(this.spreadsheetId);
+      for (const [month, rows] of byMonth) {
+        const tab = `archive_${month}`;
+        if (!titles.includes(tab)) {
+          await this.client.addTab(this.spreadsheetId, tab);
+          await this.client.writeFirstRow(this.spreadsheetId, tab, [...RAW_TRENDS_HEADERS]);
+          titles.push(tab);
+        }
+        const result = await this.appendBatched(tab, rows);
+        archived += result.rowsAppended;
+        tabs.push(tab);
+      }
+    }
+
+    const runs: [number, number][] = [];
+    for (const row of aged) {
+      const last = runs[runs.length - 1];
+      if (last && row.sheetRow === last[1]) last[1] = row.sheetRow + 1;
+      else runs.push([row.sheetRow, row.sheetRow + 1]);
+    }
+    let deleted = 0;
+    for (const [start, end] of [...runs].reverse()) {
+      const label = `retain ${RAW_TRENDS_TAB} rows ${String(start)}-${String(end)}`;
+      await this.queue.enqueue(label, () =>
+        this.client.deleteRows(this.spreadsheetId, RAW_TRENDS_TAB, start, end),
+      );
+      deleted += end - start;
+    }
+    this.cache.invalidate();
+    return { archived, deleted, warnings, tabs };
+  }
+
+  private async flipStaleLatest(    tab: string,
     dateHeader: string,
     dateCol: number,
     idHeader: string,

@@ -122,8 +122,7 @@ export class FakeSheetsClient implements SheetsClient {
     return rows.map((r) => [...r]);
   }
 
-  async batchUpdate(_spreadsheetId: string, updates: TabRangeUpdate[]): Promise<void> {
-    this.maybeFail("batchUpdate");
+  async batchUpdate(_spreadsheetId: string, updates: TabRangeUpdate[]): Promise<void> {    this.maybeFail("batchUpdate");
     this.log(
       "batchUpdate",
       updates.map((u) => u.range).join(","),
@@ -149,6 +148,25 @@ export class FakeSheetsClient implements SheetsClient {
         });
       });
     }
+  }
+
+  async deleteRows(
+    _spreadsheetId: string,
+    tab: string,
+    startRowIndex: number,
+    endRowIndexExclusive: number,
+  ): Promise<void> {
+    this.log("deleteRows", tab, endRowIndexExclusive - startRowIndex);
+    this.maybeFail("deleteRows");
+    const rows = this.tabs.get(tab);
+    if (rows === undefined) {
+      throw new SheetsApiError(`Requested entity was not found.`, {
+        status: 404,
+        errorCode: "SHEET_NOT_FOUND",
+      });
+    }
+    if (endRowIndexExclusive <= startRowIndex) return;
+    rows.splice(startRowIndex, endRowIndexExclusive - startRowIndex);
   }
 }
 

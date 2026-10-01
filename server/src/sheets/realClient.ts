@@ -161,6 +161,46 @@ export class GoogleSheetsClient implements SheetsClient {
       }),
     );
   }
+
+  async deleteRows(
+    spreadsheetId: string,
+    tab: string,
+    startRowIndex: number,
+    endRowIndexExclusive: number,
+  ): Promise<void> {
+    if (endRowIndexExclusive <= startRowIndex) return;
+    await call("deleteRows", async () => {
+      const meta = await this.api.spreadsheets.get({
+        spreadsheetId,
+        fields: "sheets.properties",
+      });
+      const sheetId = (meta.data.sheets ?? []).find((s) => s.properties?.title === tab)?.properties
+        ?.sheetId;
+      if (sheetId === undefined || sheetId === null) {
+        throw new SheetsApiError(`Requested entity was not found (tab '${tab}')`, {
+          status: 404,
+          errorCode: "SHEET_NOT_FOUND",
+        });
+      }
+      await this.api.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId,
+                  dimension: "ROWS",
+                  startIndex: startRowIndex,
+                  endIndex: endRowIndexExclusive,
+                },
+              },
+            },
+          ],
+        },
+      });
+    });
+  }
 }
 
 export interface RealClientBundle {

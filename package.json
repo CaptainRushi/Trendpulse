@@ -21,6 +21,7 @@
     "doctor": "npm run doctor --workspace=server",
     "setup": "npm run setup --workspace=server",
     "collect": "npm run collect --workspace=server --",
+    "pipeline": "npm run pipeline --workspace=server --",
     "rebuild-state": "npm run rebuild-state --workspace=server"
   },
   "devDependencies": {

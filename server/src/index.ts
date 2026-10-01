@@ -5,6 +5,9 @@ import dotenv from "dotenv";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config/env.js";
 import { applyMigrations, openDatabase } from "./db/sqlite.js";
+import { Orchestrator } from "./pipeline/orchestrator.js";
+import { PipelineScheduler } from "./scheduler/cron.js";
+import { recoverOnBoot } from "./scheduler/lock.js";
 import { createLogger, setRootLogger } from "./utils/logger.js";
 import { APP_VERSION } from "./version.js";
 
@@ -40,6 +43,48 @@ async function main(): Promise<void> {
   const db = openDatabase(dbPath);
   const applied = applyMigrations(db);
   if (applied.length > 0) logger.info({ applied }, "applied SQLite migrations");
+
+  // Stale-lock recovery + scheduler live here (TRD §10). Clients are built
+  // lazily per run, so boot never crashes on missing credentials.
+  const recovered = recoverOnBoot(db);
+  if (recovered.interruptedRuns.length > 0) {
+    logger.warn({ runs: recovered.interruptedRuns }, "interrupted runs left by a previous process");
+  }
+  if (recovered.releasedStaleLocks > 0) {
+    logger.info({ count: recovered.releasedStaleLocks }, "released dead pipeline locks");
+  }
+
+  const orchestrator = new Orchestrator({ db, config, log: logger });
+  const scheduler = new PipelineScheduler({
+    cronExpression: config.scheduleCron,
+    timezone: config.tz,
+    log: logger,
+    onTrigger: (trigger) => orchestrator.startRun({ trigger }),
+  });
+  scheduler.start();
+
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: config.tz });
+  const missedToday = scheduler.needsCatchup(db, today);
+  if (config.autoResume) {
+    for (const runId of recovered.interruptedRuns) {
+      logger.info({ runId }, "auto-resuming interrupted run");
+      void orchestrator.retryRun(runId).catch((error: unknown) => {
+        logger.error(
+          { runId, err: error instanceof Error ? error.message : String(error) },
+          "auto-resume failed",
+        );
+      });
+    }
+  }
+  if (config.runMissedOnStart && missedToday && recovered.interruptedRuns.length === 0) {
+    logger.info("no successful run today — starting catch-up run");
+    void orchestrator.startRun({ trigger: "catchup" }).catch((error: unknown) => {
+      logger.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        "catch-up run failed",
+      );
+    });
+  }
 
   const app = buildApp({
     version: APP_VERSION,

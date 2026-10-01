@@ -29,7 +29,8 @@ import { ulid } from "../utils/ulid.js";
 import type { TrendPulseConfig } from "../config/env.js";
 import { resolveEffectiveSettings } from "../config/settings.js";
 import type { EffectiveSettings } from "../config/settings.js";
-import { EventBus, pipelineBus } from "./events.js";
+import { pipelineBus } from "./events.js";
+import type { EventBus } from "./events.js";
 import type { StateDb } from "../db/sqlite.js";
 import { createExtractor, type LlmExtractor } from "../llm/extract.js";
 import { createExtractorClient, createJevClient } from "../llm/factory.js";
@@ -298,15 +299,21 @@ export class Orchestrator {
   // ── execution ──────────────────────────────────────────────────────────
 
   private async executeFrom(exec: Execution, from: StageName): Promise<void> {
-    const handlers: Record<StageName, () => Promise<void>> = {
+    const handlers: Record<StageName, () => Promise<void> | void> = {
       collect: () => this.stageCollect(exec),
       normalize: () => this.stagePrepare(exec),
-      dedupe: () => this.stageNoop(exec, "dedupe"),
-      engagement_norm: () => this.stageNoop(exec, "engagement_norm"),
+      dedupe: () => {
+        this.stageNoop(exec, "dedupe");
+      },
+      engagement_norm: () => {
+        this.stageNoop(exec, "engagement_norm");
+      },
       persist_raw: () => this.stagePersistRaw(exec),
       sort_map: () => this.stageSortMap(exec),
       sort_reduce: () => this.stageSortReduce(exec),
-      score: () => this.stageScore(exec),
+      score: () => {
+        this.stageScore(exec);
+      },
       persist_sorted: () => this.stagePersistSorted(exec),
       finalize: () => this.stageFinalize(exec),
     };
@@ -318,7 +325,7 @@ export class Orchestrator {
     }
   }
 
-  private async runStage(exec: Execution, stage: StageName, handler: () => Promise<void>): Promise<void> {
+  private async runStage(exec: Execution, stage: StageName, handler: () => Promise<void> | void): Promise<void> {
     this.setStage(exec.runId, stage, "running");
     this.events.emit(exec.runId, "stage", { stage, status: "running" });
     this.events.emit(exec.runId, "progress", {
@@ -341,7 +348,7 @@ export class Orchestrator {
   }
 
   /** normalize/dedupe/engagement_norm share prepareRunItems' atomic unit. */
-  private async stageNoop(exec: Execution, stage: StageName): Promise<void> {
+  private stageNoop(exec: Execution, stage: StageName): void {
     this.setStageDetail(exec.runId, stage, { via: "prepareRunItems" });
   }
 
@@ -397,7 +404,15 @@ export class Orchestrator {
   }
 
   private repo(): SheetsRepo {
-    const client = this.deps.sheetsClient ?? createRealSheetsClient(this.config.googleServiceAccountJsonPath).client;
+    let client: SheetsClient;
+    try {
+      client =
+        this.deps.sheetsClient ?? createRealSheetsClient(this.config.googleServiceAccountJsonPath).client;
+    } catch (error) {
+      // Missing/unreadable credentials are operational (stage failed, run
+      // failed) — never an "unexpected" error that leaves the run `running`.
+      throw new SheetsApiError(error instanceof Error ? error.message : String(error), {});
+    }
     return new SheetsRepo(client, {
       spreadsheetId: this.config.googleSheetId,
       cacheTtlS: this.config.sheetCacheTtlS,
@@ -455,7 +470,7 @@ export class Orchestrator {
     const detail = this.stageDetail(exec.runId, "sort_map") as {
       topics?: unknown;
       batchCount?: unknown;
-    };
+    } | null;
     if (!detail || !Array.isArray(detail.topics)) {
       throw new Error(`sort_map output missing for run ${exec.runId} — run sort_map first`);
     }
@@ -483,8 +498,8 @@ export class Orchestrator {
     });
   }
 
-  private async stageScore(exec: Execution): Promise<void> {
-    const detail = this.stageDetail(exec.runId, "sort_reduce") as { topics?: unknown };
+  private stageScore(exec: Execution): void {
+    const detail = this.stageDetail(exec.runId, "sort_reduce") as { topics?: unknown } | null;
     if (!detail || !Array.isArray(detail.topics)) {
       throw new Error(`sort_reduce output missing for run ${exec.runId} — run sort_reduce first`);
     }
@@ -528,7 +543,7 @@ export class Orchestrator {
   }
 
   private async stagePersistSorted(exec: Execution): Promise<void> {
-    const detail = this.stageDetail(exec.runId, "score") as { topics?: unknown };
+    const detail = this.stageDetail(exec.runId, "score") as { topics?: unknown } | null;
     if (!detail || !Array.isArray(detail.topics)) {
       throw new Error(`score output missing for run ${exec.runId} — run score first`);
     }
@@ -632,10 +647,14 @@ export class Orchestrator {
       );
     }
     // Retention is janitorial: failures are recorded, never fatal.
-    let retention: Record<string, unknown> = { skipped: true };
+    let retention: unknown = { skipped: true };
     try {
       const { retentionDays, retentionMode } = exec.settings;
-      retention = await this.retainRaw(repo, exec.runDate, retentionDays, retentionMode);
+      retention = await repo.retainRaw({
+        runDate: exec.runDate,
+        retentionDays,
+        retentionMode,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       retention = { error: message };
@@ -751,7 +770,9 @@ export class Orchestrator {
       (this.config.omnirouteApiKey
         ? createExtractor(
             createExtractorClient(this.config, {
-              onCall: (record) => recordLlmCall(this.db, runId, record),
+              onCall: (record) => {
+                recordLlmCall(this.db, runId, record);
+              },
             }),
           )
         : {
@@ -776,7 +797,9 @@ export class Orchestrator {
   private jevClient(runId: string): JevJsonClient {
     if (this.deps.jevClient) return this.deps.jevClient;
     return createJevClient(this.config, {
-      onCall: (record) => recordLlmCall(this.db, runId, record),
+      onCall: (record) => {
+        recordLlmCall(this.db, runId, record);
+      },
     });
   }
 
@@ -836,20 +859,6 @@ export class Orchestrator {
       n: number;
     };
     return row.n > 0;
-  }
-
-  /** Retention lives in SheetsRepo (Phase 6 task) — wired once it lands. */
-  private async retainRaw(
-    _repo: SheetsRepo,
-    _runDate: string,
-    _retentionDays: number,
-    _mode: "archive" | "delete",
-  ): Promise<Record<string, unknown>> {
-    void _repo;
-    void _runDate;
-    void _retentionDays;
-    void _mode;
-    return { skipped: "retention lands later in Phase 6" };
   }
 }
 

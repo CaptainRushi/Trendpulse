@@ -26,8 +26,8 @@ function fastQueue(): SheetsWriteQueue {
 
 /** HackerNews-shaped stub: 3 top stories with full item bodies. */
 function hnFetch(): typeof fetch {
-  return ((input: RequestInfo | URL): Promise<Response> => {
-    const url = String(input);
+  const impl: typeof fetch = (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.includes("/topstories.json")) {
       return Promise.resolve(new Response("[11,22,33]", { status: 200 }));
     }
@@ -48,7 +48,8 @@ function hnFetch(): typeof fetch {
         { status: 200 },
       ),
     );
-  }) as typeof fetch;
+  };
+  return impl;
 }
 
 interface JevHandlers {
@@ -313,17 +314,48 @@ describe("kill mid-sort_map and resume", () => {
   });
 });
 
-describe("retry from a failed stage", () => {
-  it("reuses done stages (collect runs once) and completes", async () => {
+describe("missing credentials fail the run (never stuck running)", () => {
+  it("unreadable service-account key marks persist_raw/stage failed", async () => {
+    const db = openTestDb();
+    try {
+      const noCreds = loadConfig({ GOOGLE_SERVICE_ACCOUNT_JSON_PATH: "C:/nonexistent/key.json" });
+      const orch = new Orchestrator({
+        db,
+        config: noCreds,
+        log,
+        sheetsQueue: fastQueue(),
+        fetchImpl: hnFetch(),
+        jevClient: jevStub(),
+      });
+      await expect(
+        orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] }),
+      ).rejects.toThrow(/key\.json|service-account/i);
+      const row = db.prepare("SELECT id, status, error FROM runs").get() as {
+        id: string;
+        status: string;
+        error: string | null;
+      };
+      expect(row.status).toBe("failed"); // not left `running`
+      expect(row.error).toMatch(/key\.json|service-account/i);
+      const stages = stageStatuses(db, row.id);
+      expect(stages["persist_raw"]).toBe("failed");
+      expect(stages["collect"]).toBe("done");
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("retry from a failed stage", () => {  it("reuses done stages (collect runs once) and completes", async () => {
     const db = openTestDb();
     try {
       const client = new FakeSheetsClient();
       client.failNext({ method: "appendRows", times: 1, status: 403 });
       let fetches = 0;
-      const countingFetch = ((input: RequestInfo | URL): Promise<Response> => {
+      const countingFetch: typeof fetch = (input) => {
         fetches += 1;
         return hnFetch()(input);
-      }) as typeof fetch;
+      };
       const orch = new Orchestrator({
         db,
         config,

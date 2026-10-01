@@ -60,4 +60,15 @@ export interface SheetsClient {
   /** All values including the header row. Throws RANGE_NOT_FOUND when missing. */
   getAllValues(spreadsheetId: string, tab: string): Promise<string[][]>;
   batchUpdate(spreadsheetId: string, updates: TabRangeUpdate[]): Promise<void>;
+  /**
+   * Delete whole rows by 0-based sheet index (header is row 0):
+   * removes [startRowIndex, endRowIndexExclusive). No-op when empty.
+   * Throws SHEET_NOT_FOUND when the tab is missing.
+   */
+  deleteRows(
+    spreadsheetId: string,
+    tab: string,
+    startRowIndex: number,
+    endRowIndexExclusive: number,
+  ): Promise<void>;
 }

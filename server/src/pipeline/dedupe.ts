@@ -18,6 +18,7 @@
  */
 import type { StateDb } from "../db/sqlite.js";
 import type { SourceKey } from "../sheets/schema.js";
+import { shiftDate } from "../utils/time.js";
 import type { NormalizedItem } from "./normalize.js";
 
 /** TRD §6: trigram Jaccard ≥ 0.85 merges. */
@@ -203,11 +204,7 @@ export interface SeenFilter {
 
 /** YYYY-MM-DD minus N days (UTC date math; ISO strings compare lexicographically). */
 export function cutoffDate(runDate: string, dedupeDays: number): string {
-  const year = Number(runDate.slice(0, 4));
-  const month = Number(runDate.slice(5, 7));
-  const day = Number(runDate.slice(8, 10));
-  const cutoff = new Date(Date.UTC(year, month - 1, day) - dedupeDays * 86_400_000);
-  return cutoff.toISOString().slice(0, 10);
+  return shiftDate(runDate, -dedupeDays);
 }
 
 /**
