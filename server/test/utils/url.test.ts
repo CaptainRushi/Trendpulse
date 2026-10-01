@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalizeUrl } from "../../src/utils/url.js";
+import { canonicalizeUrl, redactUrlForLog } from "../../src/utils/url.js";
 
 describe("canonicalizeUrl", () => {
   it("strips utm_* and common tracking params, keeps the rest", () => {
@@ -35,5 +35,14 @@ describe("canonicalizeUrl", () => {
     // ref= is only stripped by reddit's own rules in normalize (Phase 4);
     // canonicalization itself keeps unknown params.
     expect(canonicalizeUrl("https://e.com/a?ref=home")).toBe("https://e.com/a?ref=home");
+  });
+});
+
+describe("redactUrlForLog", () => {
+  it("strips query and fragment, keeps host+path", () => {
+    expect(redactUrlForLog("https://example.com/a?token=secret#frag")).toBe(
+      "https://example.com/a[…]",
+    );
+    expect(redactUrlForLog("https://example.com/a")).toBe("https://example.com/a");
   });
 });

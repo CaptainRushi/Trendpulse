@@ -55,3 +55,14 @@ export function canonicalizeUrl(raw: string): string | null {
   // URL.toString() adds "/" for bare hosts — keep it (that IS the root path).
   return out;
 }
+
+/**
+ * Strip query + fragment for logs and error strings: tokens hide in query
+ * strings (private feeds, signed URLs), and these strings persist to
+ * run_source_stats/runs_log. Host + path stay for debuggability.
+ */
+export function redactUrlForLog(raw: string): string {
+  const cut = [raw.indexOf("?"), raw.indexOf("#")].filter((i) => i !== -1);
+  if (cut.length === 0) return raw;
+  return `${raw.slice(0, Math.min(...cut))}[…]`;
+}

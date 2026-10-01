@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Env vars arrive as strings; "false"/"0"/"" mean false, everything else
-// truthy check is explicit so LOG_LLM_BODIES=false is not read as true.
+// truthy check is explicit so e.g. "false" is not read as true.
 function boolField(defaultValue: boolean): z.ZodType<boolean, z.ZodTypeDef, string | undefined> {
   return z
     .string()
@@ -36,7 +36,6 @@ const EnvSchema = z.object({
   TZ: z.string().default("UTC"),
   DASHBOARD_PASSWORD: z.string().default(""),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  LOG_LLM_BODIES: boolField(false),
 
   SCHEDULE_CRON: z.string().default("0 6 * * *"),
   RUN_MISSED_ON_START: boolField(true),
@@ -84,7 +83,6 @@ export interface TrendPulseConfig {
   tz: string;
   dashboardPassword: string;
   logLevel: string;
-  logLlmBodies: boolean;
   scheduleCron: string;
   runMissedOnStart: boolean;
   autoResume: boolean;
@@ -145,7 +143,6 @@ export function loadConfig(env: RawEnv = process.env): TrendPulseConfig {
     tz: e.TZ,
     dashboardPassword: e.DASHBOARD_PASSWORD,
     logLevel: e.LOG_LEVEL,
-    logLlmBodies: e.LOG_LLM_BODIES,
     scheduleCron: e.SCHEDULE_CRON,
     runMissedOnStart: e.RUN_MISSED_ON_START,
     autoResume: e.AUTO_RESUME,

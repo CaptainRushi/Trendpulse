@@ -3,7 +3,8 @@
  * orchestrator runs; boot checks for a missed run. A busy pipeline is
  * normal (a run is already going) — logged, never thrown out of the tick.
  */
-import cron from "node-cron";
+import { schedule, validate } from "node-cron";
+import type { ScheduledTask } from "node-cron";
 import type { Logger } from "pino";
 import { createLogger } from "../utils/logger.js";
 import type { StateDb } from "../db/sqlite.js";
@@ -22,10 +23,10 @@ export class PipelineScheduler {
   private timezone: string;
   private readonly onTrigger: (trigger: RunTrigger) => Promise<unknown>;
   private readonly log: Logger;
-  private task: cron.ScheduledTask | null = null;
+  private task: ScheduledTask | null = null;
 
   constructor(options: SchedulerOptions) {
-    if (!cron.validate(options.cronExpression)) {
+    if (!validate(options.cronExpression)) {
       throw new Error(
         `Invalid SCHEDULE_CRON: ${JSON.stringify(options.cronExpression)} (expected 5-field cron, e.g. "0 6 * * *")`,
       );
@@ -39,7 +40,7 @@ export class PipelineScheduler {
   /** Begin firing on the cron schedule (idempotent). */
   start(): void {
     if (this.task) return;
-    this.task = cron.schedule(
+    this.task = schedule(
       this.expression,
       () => {
         this.fire("cron").catch((error: unknown) => {
@@ -58,8 +59,9 @@ export class PipelineScheduler {
   }
 
   stop(): void {
-    this.task?.stop();
+    const task = this.task;
     this.task = null;
+    if (task) void task.stop();
   }
 
   /**
@@ -67,14 +69,15 @@ export class PipelineScheduler {
    * running state: a live scheduler stays live on the new schedule.
    */
   reschedule(cronExpression: string, timezone: string): void {
-    if (!cron.validate(cronExpression)) {
+    if (!validate(cronExpression)) {
       throw new Error(
         `Invalid SCHEDULE_CRON: ${JSON.stringify(cronExpression)} (expected 5-field cron, e.g. "0 6 * * *")`,
       );
     }
     const wasRunning = this.task !== null;
-    this.task?.stop();
+    const old = this.task;
     this.task = null;
+    if (old) void old.stop();
     this.expression = cronExpression;
     this.timezone = timezone;
     if (wasRunning) this.start();
@@ -82,6 +85,12 @@ export class PipelineScheduler {
 
   get running(): boolean {
     return this.task !== null;
+  }
+
+  /** Next scheduled fire time (null when stopped) — feeds health next_run_at. */
+  nextRunAt(): string | null {
+    const next = this.task?.getNextRun() ?? null;
+    return next ? next.toISOString() : null;
   }
 
   private async fire(trigger: RunTrigger): Promise<void> {

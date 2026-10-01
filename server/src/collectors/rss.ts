@@ -7,6 +7,7 @@ import Parser from "rss-parser";
 import type { Collector, CollectResult, PingResult, RawItemDraft, RawItemDraftInput } from "./types.js";
 import { RawItemDraft as DraftSchema } from "./types.js";
 import { toIsoOrNull } from "../utils/time.js";
+import { redactUrlForLog } from "../utils/url.js";
 import { httpPing, needsConfig } from "./ping.js";
 
 const parser = new Parser({ timeout: 15_000 });
@@ -54,19 +55,21 @@ export const rssCollector: Collector = {
 
     for (const feedUrl of feeds) {
       if (items.length >= ctx.limit) break;
+      // Observability only: query strings may carry tokens (private feeds).
+      const loggedUrl = redactUrlForLog(feedUrl);
       try {
         const res = await ctx.http.get(feedUrl, { etag: true, robots: true });
         if (res.robotsBlocked) {
-          ctx.log.warn({ feedUrl }, "rss: robots.txt disallows this URL, skipped");
-          errors.push(`${feedUrl}: robots.txt disallowed`);
+          ctx.log.warn({ feedUrl: loggedUrl }, "rss: robots.txt disallows this URL, skipped");
+          errors.push(`${loggedUrl}: robots.txt disallowed`);
           continue;
         }
         if (res.notModified) {
-          ctx.log.debug({ feedUrl }, "rss: not modified (304)");
+          ctx.log.debug({ feedUrl: loggedUrl }, "rss: not modified (304)");
           continue;
         }
         if (res.status !== 200) {
-          errors.push(`${feedUrl}: HTTP ${String(res.status)}`);
+          errors.push(`${loggedUrl}: HTTP ${String(res.status)}`);
           continue;
         }
 
@@ -95,7 +98,7 @@ export const rssCollector: Collector = {
           rank += 1;
         }
       } catch (error) {
-        errors.push(`${feedUrl}: ${error instanceof Error ? error.message : String(error)}`);
+        errors.push(`${loggedUrl}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 

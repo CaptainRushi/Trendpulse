@@ -5,6 +5,7 @@
  */
 import { parseRobots, type RobotsRules } from "../utils/robots.js";
 import { DomainRateLimiter, type RateLimiterOptions } from "../utils/rate-limit.js";
+import { redactUrlForLog } from "../utils/url.js";
 
 export interface HttpResponse {
   status: number;
@@ -116,7 +117,7 @@ export class HttpClient {
           }
 
           if (response.status === 429 || response.status >= 500) {
-            lastError = new HttpError(`HTTP ${String(response.status)} for ${url}`, url, response.status);
+            lastError = new HttpError(`HTTP ${String(response.status)} for ${redactUrlForLog(url)}`, redactUrlForLog(url), response.status);
             if (attempt < this.maxAttempts) {
               const retryAfter = Number(response.headers.get("retry-after"));
               const wait =
@@ -140,7 +141,7 @@ export class HttpClient {
             notModified: false,
           };
         }
-        throw lastError ?? new HttpError(`request failed for ${url}`, url, 0);
+        throw lastError ?? new HttpError(`request failed for ${redactUrlForLog(url)}`, redactUrlForLog(url), 0);
       },
       options.gapMs,
     );
@@ -187,7 +188,7 @@ export class HttpClient {
           break;
         }
         if (response.status === 429 || response.status >= 500) {
-          lastError = new HttpError(`HTTP ${String(response.status)} for ${url}`, url, response.status);
+          lastError = new HttpError(`HTTP ${String(response.status)} for ${redactUrlForLog(url)}`, redactUrlForLog(url), response.status);
           if (attempt < this.maxAttempts) {
             await this.sleep(this.retryBaseMs * 2 ** (attempt - 1));
             continue;
@@ -201,7 +202,7 @@ export class HttpClient {
           notModified: false,
         };
       }
-      throw lastError ?? new HttpError(`request failed for ${url}`, url, 0);
+      throw lastError ?? new HttpError(`request failed for ${redactUrlForLog(url)}`, redactUrlForLog(url), 0);
     });
   }
 

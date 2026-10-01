@@ -219,7 +219,22 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** MIT with a `contributors` holder; CI gains build + web tests + e2e job.
 - **Reason:** No individual owner was ever named; contributors-holder is the honest default. CI previously ignored web entirely — the e2e job installs browsers itself so fresh runners work.
 - **Decision:** Live sort attempted during verification (real HN/Wikipedia → Jev, no sheet writes); blocked on a dead third-party gateway, run failed correctly.
-- **Reason:** Worth trying with the pieces present: collect→normalize succeeded on live data and `sort_map` failed with an actionable connection error instead of crashing — which is itself the designed behavior. Live LLM output quality remains unproven until credentials + a stable gateway exist (Phase 10 soak).- **Decision:** Axe serious/critical clean is the automated gate; Lighthouse ≥95 stays a manual check.
+- **Reason:** Worth trying with the pieces present: collect→normalize succeeded on live data and `sort_map` failed with an actionable connection error instead of crashing — which is itself the designed behavior. Live LLM output quality remains unproven until credentials + a stable gateway exist (Phase 10 soak).
+
+## 2026-10-01 — Phase 10 Hardening
+
+- **Decision:** Upgraded node-cron 3 → 4 (fixes the only `npm audit` findings, uuid bounds-check) after verifying schedule/validate/fire/getNextRun semantics + full scheduler suite green.
+- **Reason:** The vuln is barely reachable locally (uuid ids for internal tasks), but a clean audit with a behavior-preserving major is strictly better. Bonus: v4's `getNextRun()` closed the Phase 7 `next_run_at: null` limitation — health now reports the real next fire time.
+- **Decision:** Kept `^` ranges + committed lockfile instead of pinning exact versions.
+- **Reason:** The lockfile + `npm ci` already makes installs byte-reproducible; hand-editing ~20 specifiers adds churn without adding determinism.
+- **Decision:** Collector/feed/page URLs are query-stripped (`host/path[…]`) in every log line and error string (`redactUrlForLog`).
+- **Reason:** The secret audit found the one real leak path: token-bearing private URLs flowed verbatim into logs AND `run_source_stats`/`runs_log` sheet rows. Host+path keeps debuggability; the `…` marker shows something was cut.
+- **Decision:** Removed the inert `LOG_LLM_BODIES` env var (parsed, never consumed).
+- **Reason:** A flag that suggests prompt bodies can be logged — directly against the metadata-only logging design — is worse than no flag. Deletion is behavior-neutral.
+- **Decision:** Implemented the `rebuild-state` stub (seen_items from `raw_trends`, min/max merge that never narrows) + shared `scripts/lib/dbPath.ts`.
+- **Reason:** It was promised for Phase 6 and the soak needs it (DB loss mid-soak must not restart dedupe history). Pure planner is unit-tested; the script stays thin.
+- **Decision:** Sheet projection documented in README (≈230k cells at defaults ≈ 2% of 10M); retention defaults unchanged.
+- **Reason:** The math shows 30-day archive is conservative-correct with 10× headroom; only sustained 40× volume threatens the cap. Archive mode noted as readability-only (same spreadsheet, no cap relief) — only `delete` frees cells.- **Decision:** Axe serious/critical clean is the automated gate; Lighthouse ≥95 stays a manual check.
 - **Reason:** Lighthouse needs Chrome + the lighthouse package — unrunnable in this environment. Axe with the serious/critical filter is the honest automatable proxy, documented here.
 - **Decision:** Vite binds `--host 127.0.0.1`; Playwright webServer runs through `cmd /c` on Windows.
 - **Reason:** `localhost` bound IPv6 here, refusing the 127.0.0.1 URLs everything else uses; `npm` isn't directly spawnable on Windows.

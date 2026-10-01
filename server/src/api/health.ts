@@ -60,8 +60,8 @@ export function registerHealth(app: FastifyInstance, ctx: AppContext): void {
       lastRun = null;
     }
 
-    // next_run_at: the scheduler owns timing and node-cron exposes no
-    // next-fire API — null means "unknown", not "unscheduled".
+    // next_run_at comes straight from the live scheduler (node-cron v4
+    // exposes the next fire time); null when no scheduler is attached.
     return HealthResponse.parse({
       ok: true,
       version: ctx.version,
@@ -69,7 +69,7 @@ export function registerHealth(app: FastifyInstance, ctx: AppContext): void {
       sheets,
       omniroute,
       jev,
-      next_run_at: null,
+      next_run_at: ctx.scheduler?.nextRunAt() ?? null,
       last_run: lastRun,
     });
   });

@@ -144,4 +144,22 @@ describe("rssCollector", () => {
     const { stats } = await rssCollector.collect(ctx);
     expect(stats.status).toBe("error");
   });
+
+  it("never leaks query strings (tokens) into errors or logs", async () => {
+    const fetchImpl = ((input: RequestInfo | URL): Promise<Response> => {
+      const url = urlOf(input);
+      if (url.endsWith("/robots.txt")) {
+        return Promise.resolve(new Response("User-agent: *\nDisallow: /feed", { status: 200 }));
+      }
+      return Promise.resolve(new Response(fixture("rss_hnrss.xml"), { status: 200 }));
+    }) as typeof fetch;
+    const ctx = makeCtx({
+      fetchImpl,
+      config: { feeds: ["https://blocked.com/feed?token=secret-token"] },
+    });
+    const { stats } = await rssCollector.collect(ctx);
+    expect(stats.status).toBe("error");
+    expect(stats.error).toContain("https://blocked.com/feed[…]");
+    expect(stats.error).not.toContain("secret-token");
+  });
 });

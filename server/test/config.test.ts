@@ -19,7 +19,6 @@ describe("loadConfig", () => {
   it("parses string booleans and numbers correctly", () => {
     const config = loadConfig({
       PORT: "9999",
-      LOG_LLM_BODIES: "true",
       RUN_MISSED_ON_START: "false",
       AUTO_RESUME: "true",
       ENABLE_PLAYWRIGHT: "1",
@@ -27,7 +26,6 @@ describe("loadConfig", () => {
       LLM_CONCURRENCY: "4",
     });
     expect(config.port).toBe(9999);
-    expect(config.logLlmBodies).toBe(true);
     expect(config.runMissedOnStart).toBe(false);
     expect(config.autoResume).toBe(true);
     expect(config.enablePlaywright).toBe(true);

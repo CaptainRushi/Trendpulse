@@ -10,6 +10,7 @@ import pLimit from "p-limit";
 import type { Collector, CollectResult, PingResult, RawItemDraft, RawItemDraftInput } from "./types.js";
 import { RawItemDraft as DraftSchema } from "./types.js";
 import { httpPing, needsConfig } from "./ping.js";
+import { redactUrlForLog } from "../utils/url.js";
 
 /** Configured page URLs (http/https only). */
 export function configuredPages(config: Record<string, unknown>): string[] {
@@ -71,17 +72,19 @@ export const webpageCollector: Collector = {
     const results = await Promise.all(
       pages.map((url) =>
         limit(async (): Promise<RawItemDraft | null> => {
+          // Observability only: query strings may carry tokens (signed URLs).
+          const loggedUrl = redactUrlForLog(url);
           try {
             let html = "";
             const res = await ctx.http.get(url, { etag: true, robots: true });
             if (res.robotsBlocked) {
-              ctx.log.warn({ url }, "webpage: robots.txt disallows this URL, skipped");
-              errors.push(`${url}: robots.txt disallowed`);
+              ctx.log.warn({ url: loggedUrl }, "webpage: robots.txt disallows this URL, skipped");
+              errors.push(`${loggedUrl}: robots.txt disallowed`);
               return null;
             }
             if (res.notModified) return null;
             if (res.status !== 200) {
-              errors.push(`${url}: HTTP ${String(res.status)}`);
+              errors.push(`${loggedUrl}: HTTP ${String(res.status)}`);
               return null;
             }
             html = res.text;
@@ -91,13 +94,13 @@ export const webpageCollector: Collector = {
               readable = await renderWithPlaywright(ctx, url);
             }
             if (!readable) {
-              ctx.log.debug({ url }, "webpage: no readable article body");
+              ctx.log.debug({ url: loggedUrl }, "webpage: no readable article body");
               return null;
             }
 
             const extracted = await ctx.llm.extract({ text: readable.text, url, tag: "webpage" });
             if (!extracted.is_article) {
-              ctx.log.debug({ url }, "webpage: LLM verdict is_article=false, skipped");
+              ctx.log.debug({ url: loggedUrl }, "webpage: LLM verdict is_article=false, skipped");
               return null;
             }
 
@@ -115,7 +118,7 @@ export const webpageCollector: Collector = {
               extraction_model: ctx.llm.model,
             } satisfies RawItemDraftInput);
           } catch (error) {
-            errors.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(`${loggedUrl}: ${error instanceof Error ? error.message : String(error)}`);
             return null;
           }
         }),
@@ -147,7 +150,7 @@ async function renderWithPlaywright(
       await browser.close();
     }
   } catch (error) {
-    ctx.log.warn({ err: error, url }, "webpage: playwright fallback failed");
+    ctx.log.warn({ err: error, url: redactUrlForLog(url) }, "webpage: playwright fallback failed");
     return null;
   }
 }

@@ -14,8 +14,7 @@
  * run is observable; item persistence lands in Phase 4 (raw_trends).
  */
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import dotenv from "dotenv";
 import { loadConfig } from "../src/config/env.js";
 import { applyMigrations, openDatabase, type StateDb } from "../src/db/sqlite.js";
@@ -24,6 +23,7 @@ import type { SourceStats } from "../src/collectors/types.js";
 import type { SourceKey } from "../src/sheets/schema.js";
 import { ulid } from "../src/utils/ulid.js";
 import { buildCollectContext } from "./lib/context.js";
+import { repoDbPath } from "./lib/dbPath.js";
 
 dotenv.config();
 
@@ -73,13 +73,6 @@ interface SourceRow {
   config_json: string;
 }
 
-function repoDbPath(): string {
-  if (process.env["STATE_DB_PATH"] !== undefined && process.env["STATE_DB_PATH"] !== "") {
-    return process.env["STATE_DB_PATH"];
-  }
-  const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "..", "data", "state.db");
-}
 
 function parseConfigJson(raw: string): Record<string, unknown> {
   try {
@@ -117,7 +110,7 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
-  const dbPath = repoDbPath();
+  const dbPath = repoDbPath(import.meta.url);
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = openDatabase(dbPath);
   applyMigrations(db);

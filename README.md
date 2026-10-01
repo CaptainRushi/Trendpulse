@@ -93,6 +93,17 @@ Jev is "a model id that clusters and scores" — configure where it runs:
 - Retention (`RETENTION_DAYS`, `archive`/`delete`) prunes `raw_trends`
   after each run into `archive_YYYY_MM` tabs or away.
 
+## Capacity (10M-cell Sheets cap)
+
+Worst case per day: 7 sources × 50 items = 350 drafts → after dedupe,
+~350 `raw_trends` rows × 18 cols ≈ 6,300 cells, plus ~1,250 (`sorted`),
+11 (`digest`) and ~30 (`runs_log`). At the 30-day default retention the
+live tabs hold ≈ 230k cells — about **2% of the 10M cap**, with 10× volume
+still under a quarter. Note `archive` mode moves rows between tabs of the
+*same* spreadsheet (keeps `raw_trends` readable, does not free cap space);
+only `delete` frees cells. Per-cell content is capped at normalize time
+(title 300, snippet 500 — far below the 50k cell limit).
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |

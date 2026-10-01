@@ -10,8 +10,7 @@
  * JSON on stdout. Exit 1 on failure; a busy pipeline reports the holder.
  */
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import dotenv from "dotenv";
 import pino from "pino";
 import { loadConfig } from "../src/config/env.js";
@@ -21,6 +20,7 @@ import { Orchestrator, STAGES } from "../src/pipeline/orchestrator.js";
 import type { RunSummary, StageName } from "../src/pipeline/orchestrator.js";
 import { LockBusyError } from "../src/scheduler/lock.js";
 import type { SourceKey } from "../src/sheets/schema.js";
+import { repoDbPath } from "./lib/dbPath.js";
 
 dotenv.config();
 
@@ -30,14 +30,6 @@ const USAGE =
   "  npm run pipeline -- retry <runId> [--from-stage <stage>]\n" +
   "  npm run pipeline -- resort --date YYYY-MM-DD\n" +
   `stages: ${STAGES.join(", ")}\n`;
-
-function repoDbPath(): string {
-  if (process.env["STATE_DB_PATH"] !== undefined && process.env["STATE_DB_PATH"] !== "") {
-    return process.env["STATE_DB_PATH"];
-  }
-  const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "..", "data", "state.db");
-}
 
 function parseDate(value: string | undefined, flag: string): string {
   if (value === undefined) throw new Error(`${flag} needs a value`);
@@ -84,7 +76,7 @@ async function main(): Promise<void> {
 
 function buildOrchestrator(): Orchestrator {
   const config = loadConfig();
-  const dbPath = repoDbPath();
+  const dbPath = repoDbPath(import.meta.url);
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = openDatabase(dbPath);
   applyMigrations(db);

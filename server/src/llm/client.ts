@@ -6,7 +6,7 @@
  * retried with exponential backoff honoring Retry-After. One llm_calls row
  * is reported per completed POST (initial + repair carry their own token
  * usage) plus one row for a terminal network failure. Prompt bodies never
- * enter the log record type, so LOG_LLM_BODIES stays off by construction.
+ * enter the log record type, so full prompts are unloggable by construction.
  */
 import { z } from "zod";
 
