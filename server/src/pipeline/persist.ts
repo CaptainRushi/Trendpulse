@@ -20,6 +20,7 @@
  */
 import type { RawItemDraft } from "../collectors/types.js";
 import type { StateDb } from "../db/sqlite.js";
+import { isMissingRangeError } from "../sheets/client.js";
 import type { SheetsRepo } from "../sheets/repo.js";
 import { RawTrendRecord } from "../sheets/schema.js";
 import type { RawTrendRecord as RawRecord } from "../sheets/schema.js";
@@ -150,6 +151,16 @@ export interface PendingItem {
   absorbed: AbsorbedItem[];
 }
 
+/** All working-set records for a run (persisted or not), oldest first. */
+export function readRunItems(db: StateDb, runId: string): RawRecord[] {
+  const rows = db
+    .prepare("SELECT payload_json FROM items_run WHERE run_id = ? ORDER BY rowid")
+    .all(runId) as { payload_json: string }[];
+  // Zod strips the _absorbed sidecar (unknown keys); absorbed hashes are
+  // already in seen_items by the time rows are persisted.
+  return rows.map((row) => RawTrendRecord.parse(JSON.parse(row.payload_json) as unknown));
+}
+
 /** Pending rows for a run (persisted=0), oldest first; sidecar stripped. */
 export function readPendingRunItems(db: StateDb, runId: string): PendingItem[] {
   const rows = db
@@ -174,6 +185,11 @@ export interface PersistResult {
  * Append pending rows to `raw_trends`, then mark persisted + record seen
  * (one SQLite transaction, only after the sheet write succeeds). Throws on
  * sheets failure with pending rows and seen_items untouched.
+ *
+ * Idempotent: rows from a previous partial append already carry this
+ * run_id, so only missing ids are appended — retrying a crashed persist
+ * never duplicates rows. A missing tab reads as empty (the append below
+ * auto-inits, same as before).
  */
 export async function persistRawItems(
   db: StateDb,
@@ -183,7 +199,11 @@ export async function persistRawItems(
 ): Promise<PersistResult> {
   const pending = readPendingRunItems(db, runId);
   if (pending.length === 0) return { appended: 0, recordedSeen: 0 };
-  await repo.appendRaw(pending.map((entry) => entry.record));
+  const present = await presentRawIds(repo, runId);
+  const missing = pending.filter((entry) => !present.has(entry.record.id));
+  if (missing.length > 0) {
+    await repo.appendRaw(missing.map((entry) => entry.record));
+  }
 
   const seenEntries: { content_hash: string; source: SourceKey }[] = [];
   for (const entry of pending) {
@@ -204,5 +224,16 @@ export async function persistRawItems(
     }
   });
   write();
-  return { appended: pending.length, recordedSeen: unique.size };
+  return { appended: missing.length, recordedSeen: unique.size };
+}
+
+/** Ids this run already placed in raw_trends (empty when the tab is fresh). */
+async function presentRawIds(repo: SheetsRepo, runId: string): Promise<Set<string>> {
+  try {
+    const existing = await repo.readRaw({ runId });
+    return new Set(existing.rows.map((row) => row.id));
+  } catch (error) {
+    if (!isMissingRangeError(error)) throw error;
+    return new Set();
+  }
 }

@@ -6,11 +6,11 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config/env.js";
 import { applyMigrations, openDatabase } from "./db/sqlite.js";
 import { createLogger, setRootLogger } from "./utils/logger.js";
+import { APP_VERSION } from "./version.js";
 
 dotenv.config();
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SERVER_VERSION = "0.1.0";
 
 function defaultDbPath(): string {
   if (process.env["STATE_DB_PATH"] !== undefined && process.env["STATE_DB_PATH"] !== "") {
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   if (applied.length > 0) logger.info({ applied }, "applied SQLite migrations");
 
   const app = buildApp({
-    version: SERVER_VERSION,
+    version: APP_VERSION,
     omnirouteBaseUrl: config.omnirouteBaseUrl,
     omnirouteApiKey: config.omnirouteApiKey,
   });

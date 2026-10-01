@@ -168,6 +168,36 @@ describe("persistRawItems", () => {
     }
   });
 
+  it("re-appends only missing rows when a previous persist crashed midway", async () => {
+    const db = openTestDb();
+    insertRun(db, "run-1", RUN_DATE);
+    try {
+      const client = new FakeSheetsClient();
+      const repo = testRepo(client);
+      const prepared = prepareRunItems(db, {
+        runId: "run-1",
+        runDate: RUN_DATE,
+        drafts: [
+          makeDraft({ url: "https://example.com/a", title: "Alpha" }),
+          makeDraft({ url: "https://example.com/b", title: "Beta" }),
+        ],
+        dedupeDays: 3,
+      });
+      expect(prepared.items).toHaveLength(2);
+      const first = prepared.items[0];
+      if (!first) throw new Error("prepare produced no items");
+      // A crash after appending row 1 but before marking persisted.
+      await repo.appendRaw([first]);
+      const result = await persistRawItems(db, repo, "run-1", RUN_DATE);
+      expect(result.appended).toBe(1);
+      expect(client.rowCount("raw_trends")).toBe(3); // header + 2, no duplicate
+      expect(readPendingRunItems(db, "run-1")).toHaveLength(0);
+      expect(seenHashes(db)).toHaveLength(2);
+    } finally {
+      db.close();
+    }
+  });
+
   it("re-running the same day appends 0 raw rows", async () => {
     const db = openTestDb();
     insertRun(db, "run-1", RUN_DATE);
