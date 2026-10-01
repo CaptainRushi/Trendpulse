@@ -161,6 +161,14 @@ export function readRunItems(db: StateDb, runId: string): RawRecord[] {
   return rows.map((row) => RawTrendRecord.parse(JSON.parse(row.payload_json) as unknown));
 }
 
+/** Persisted working-set records for a whole date (re-sort input), oldest first. */
+export function readRunItemsByDate(db: StateDb, runDate: string): RawRecord[] {
+  const rows = db
+    .prepare("SELECT payload_json FROM items_run WHERE run_date = ? AND persisted = 1 ORDER BY rowid")
+    .all(runDate) as { payload_json: string }[];
+  return rows.map((row) => RawTrendRecord.parse(JSON.parse(row.payload_json) as unknown));
+}
+
 /** Pending rows for a run (persisted=0), oldest first; sidecar stripped. */
 export function readPendingRunItems(db: StateDb, runId: string): PendingItem[] {
   const rows = db
