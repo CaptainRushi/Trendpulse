@@ -26,6 +26,13 @@ function defaultDbPath(): string {
   return join(here, ...up, "data", "state.db");
 }
 
+/** Built web UI for single-port production (TRD §2); absent in dev/test. */
+function webDistDir(): string | undefined {
+  const up = here.endsWith(join("dist", "src")) ? ["..", "..", "..", "web", "dist"] : ["..", "web", "dist"];
+  const dir = join(here, ...up);
+  return dir;
+}
+
 async function main(): Promise<void> {
   // Fail fast on bad env — readable error, non-zero exit (Rule: config first).
   const config = loadConfig();
@@ -86,12 +93,13 @@ async function main(): Promise<void> {
     });
   }
 
-  const app = buildApp({
+  const app = await buildApp({
     version: APP_VERSION,
     config,
     db,
     log: logger,
     scheduler,
+    staticDir: webDistDir(),
   });
   try {
     await app.listen({ port: config.port, host: config.host });

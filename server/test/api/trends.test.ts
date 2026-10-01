@@ -92,7 +92,7 @@ describe("GET /api/trends", () => {
     const t = testContext();
     try {
       await seed(t);
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/trends?date=2026-09-30" });
         expect(res.statusCode).toBe(200);
@@ -137,7 +137,7 @@ describe("GET /api/trends", () => {
   it("rejects bad query values with VALIDATION", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         for (const url of [
           "/api/trends?limit=abc",
@@ -164,7 +164,7 @@ describe("GET /api/trends/:topic_id", () => {
     const t = testContext();
     try {
       await seed(t);
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/trends/t1" });
         expect(res.statusCode).toBe(200);
@@ -203,7 +203,7 @@ describe("GET /api/digest and /api/dates", () => {
         created_at: "2026-09-30T07:00:00.000Z",
         is_latest: true,
       });
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/digest?date=2026-09-30" });
         expect(res.statusCode).toBe(200);
@@ -224,7 +224,7 @@ describe("GET /api/digest and /api/dates", () => {
     const t = testContext();
     try {
       await seed(t);
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/dates" });
         expect(res.json<{ dates: string[] }>().dates).toEqual(["2026-09-30", "2026-09-29"]);

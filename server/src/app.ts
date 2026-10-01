@@ -5,8 +5,11 @@
  * sheets admin, runs (+retry/stream), setup probes. Errors funnel through
  * the schema §4 envelope; unexpected 500s are logged, never leaked.
  */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import fastifyStatic from "@fastify/static";
 import { registerPasswordGate } from "./api/auth.js";
 import type { AppContext } from "./api/context.js";
 import { appLogger } from "./api/context.js";
@@ -22,7 +25,7 @@ import { registerTrends } from "./api/trends.js";
 
 export type { AppContext };
 
-export function buildApp(ctx: AppContext): FastifyInstance {
+export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   const log = appLogger(ctx);
 
@@ -37,7 +40,17 @@ export function buildApp(ctx: AppContext): FastifyInstance {
   registerRuns(app, ctx);
   registerSetup(app, ctx);
 
-  app.setNotFoundHandler((_request, reply) => {
+  const spa = ctx.staticDir && existsSync(join(ctx.staticDir, "index.html")) ? ctx.staticDir : null;
+  if (spa) {
+    await app.register(fastifyStatic, { root: spa });
+  }
+
+  app.setNotFoundHandler((request, reply) => {
+    // SPA fallback: frontend routes serve index.html; only /api/* gets JSON 404s.
+    if (spa && !request.url.startsWith("/api/")) {
+      reply.sendFile("index.html");
+      return;
+    }
     reply.code(404).send({
       error: {
         code: "NOT_FOUND",

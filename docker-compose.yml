@@ -1,0 +1,27 @@
+# TrendPulse compose: one service, one port. Configure via .env first
+# (npm run setup), paying special attention to DASHBOARD_PASSWORD —
+# HOST is 0.0.0.0 here, so boot refuses to start without it.
+services:
+  trendpulse:
+    build: .
+    ports:
+      - "4317:4317"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/app/secrets
+    restart: unless-stopped
+
+  # Optional: self-hosted OmniRoute gateway instead of a remote endpoint.
+  # Uncomment, then set OMNIROUTE_BASE_URL=http://omniroute:20128/v1
+  # (and change its default admin password first — see README).
+  # omniroute:
+  #   image: diegosouzapw/omniroute
+  #   ports:
+  #     - "20128:20128"
+  #   volumes:
+  #     - ./omniroute-data:/app/data
+  #   restart: unless-stopped

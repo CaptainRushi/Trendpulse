@@ -8,7 +8,7 @@ describe("GET /api/health", () => {
   it("returns the full contract with dependency states", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/health" });
         expect(res.statusCode).toBe(200);
@@ -36,7 +36,7 @@ describe("GET /api/health", () => {
       t.db.prepare("INSERT INTO settings (key, value_json) VALUES ('setup_complete', 'true')").run();
       insertRun(t.db, "run-9", "2026-09-30");
       t.db.prepare("UPDATE runs SET status = 'success' WHERE id = 'run-9'").run();
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const body = (await app.inject({ method: "GET", url: "/api/health" })).json<{
           setup_complete: boolean;
@@ -57,7 +57,7 @@ describe("GET /api/health", () => {
       config: loadConfig({ GOOGLE_SHEET_ID: "test-sheet", OMNIROUTE_API_KEY: "should-not-leak" }),
     });
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/health" });
         expect(res.body).not.toContain("should-not-leak");
@@ -72,7 +72,7 @@ describe("GET /api/health", () => {
   it("answers 404 with the error envelope on unknown routes", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/nope" });
         expect(res.statusCode).toBe(404);

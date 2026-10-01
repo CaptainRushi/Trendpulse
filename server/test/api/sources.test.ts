@@ -6,7 +6,7 @@ describe("sources", () => {
   it("lists registry entries with defaults when the table is empty", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/sources" });
         expect(res.statusCode).toBe(200);
@@ -28,7 +28,7 @@ describe("sources", () => {
   it("PUT updates config and persists", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({
           method: "PUT",
@@ -58,7 +58,7 @@ describe("sources", () => {
   it("rejects unknown keys and bad bodies with VALIDATION", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const unknown = await app.inject({
           method: "PUT",

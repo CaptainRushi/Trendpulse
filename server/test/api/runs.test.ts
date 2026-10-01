@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { acquirePipelineLock, releasePipelineLock } from "../../src/scheduler/lock.js";
 import { insertRun } from "../pipeline/helpers.js";
@@ -88,7 +89,7 @@ function runnable(t: TestApi): TestApi["ctx"] {
 }
 
 async function waitForStatus(
-  app: ReturnType<typeof buildApp>,
+  app: FastifyInstance,
   runId: string,
   timeoutMs = 20000,
 ): Promise<string> {
@@ -106,7 +107,7 @@ describe("POST /api/runs", () => {
   it("starts a run in background (202) that completes with full detail", async () => {
     const t = testContext();
     try {
-      const app = buildApp(runnable(t));
+      const app = await buildApp(runnable(t));
       try {
         const started = await app.inject({
           method: "POST",
@@ -144,7 +145,7 @@ describe("POST /api/runs", () => {
   it("rejects bad bodies with VALIDATION and busy pipelines with 409", async () => {
     const t = testContext();
     try {
-      const app = buildApp(runnable(t));
+      const app = await buildApp(runnable(t));
       try {
         for (const payload of [
           { stages: ["nope"] },
@@ -181,7 +182,7 @@ describe("GET /api/runs", () => {
       insertRun(t.db, "run-a", "2026-09-28");
       insertRun(t.db, "run-b", "2026-09-29");
       insertRun(t.db, "run-c", "2026-09-30");
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const all = await app.inject({ method: "GET", url: "/api/runs" });
         const body = all.json<{ runs: { run_id: string }[]; total: number }>();
@@ -203,7 +204,7 @@ describe("GET /api/runs", () => {
   it("404s unknown runs and guards retry state", async () => {
     const t = testContext();
     try {
-      const app = buildApp(runnable(t));
+      const app = await buildApp(runnable(t));
       try {
         expect((await app.inject({ method: "GET", url: "/api/runs/nope" })).statusCode).toBe(404);
         const retryMissing = await app.inject({ method: "POST", url: "/api/runs/nope/retry", payload: {} });
@@ -229,7 +230,7 @@ describe("GET /api/runs/:id/stream", () => {
       insertRun(t.db, "run-sse", "2026-09-30");
       t.ctx.events?.emit("run-sse", "stage", { stage: "collect", status: "done" });
       t.ctx.events?.emit("run-sse", "done", { status: "success" });
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const missing = await app.inject({ method: "GET", url: "/api/runs/nope/stream" });
         expect(missing.statusCode).toBe(404);

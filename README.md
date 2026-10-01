@@ -1,14 +1,138 @@
 # TrendPulse
 
 Localhost daily trends collector + Jev sorter + Google Sheets store + dashboard.
-Full quick start lands in Phase 9 — this file currently holds the API
-contract (Phase 7 acceptance: this table stays in sync with `server/src/app.ts`).
+Runs on your machine, reads the public web politely, and shows ranked topics
+every morning. No accounts, no cloud, no tracking.
 
-Base `http://localhost:4317/api`. Errors: `{ error: { code, message, hint? } }`.
-When `DASHBOARD_PASSWORD` is set, every route needs HTTP Basic with a matching
-password (401 `UNAUTHORIZED` otherwise); unset = open localhost.
+## 10-minute quick start
 
-## Routes
+Prerequisites: **Node.js 20+** and **npm** (`node --version` should print v20 or newer),
+plus a Google account (for the Sheet) and an OpenAI-compatible LLM endpoint
+(OmniRoute, or anything that speaks `/chat/completions`).
+
+```bash
+git clone <repo> && cd trendpulse
+npm install            # ~2-3 min, one-time
+npm run setup          # interactive: writes .env, tests every connection
+npm run dev            # API on :4317 + dashboard on :5173
+```
+
+Open **http://localhost:4317** (production single-port) or
+**http://localhost:5173** (dev, hot reload). The setup wizard walks Google
+Sheets → OmniRoute → Jev → sources, then fires the first collection.
+`npm run doctor` re-checks every connection at any time.
+
+Production instead of dev: `npm run build && npm start` (dashboard served
+from the same :4317), or `docker compose up --build` (needs
+`DASHBOARD_PASSWORD` in `.env` — the container binds 0.0.0.0 and refuses
+to boot without it).
+
+## Google service account walkthrough
+
+The app writes to Google Sheets as itself — a service account — so your
+Google login never touches the server.
+
+1. Go to **console.cloud.google.com** → select (or create) a project.
+2. **APIs & Services → Library** → search **Google Sheets API** → Enable.
+3. **IAM & Admin → Service Accounts** → **Create service account** → any name → Create.
+4. Open the account → **Keys** → **Add key → Create new key → JSON** → downloads a file.
+5. Save it as `./secrets/service-account.json` (or paste it into `npm run setup`).
+6. Copy the `client_email` from the file (looks like `bot@project.iam.gserviceaccount.com`).
+7. Create a blank Google Sheet, click **Share**, paste that email, role **Editor**.
+8. Paste the Sheet ID (the long string in the sheet URL) into setup when asked.
+9. The wizard's **Test & create tabs** verifies access and creates
+   `raw_trends`, `sorted_trends`, `daily_digest`, `runs_log`.
+
+(No screenshots ship with this repo — the steps above name every console
+surface exactly; the wizard's test button confirms each one live.)
+
+## OmniRoute install
+
+OmniRoute is a self-hosted LLM gateway (one OpenAI-compatible endpoint,
+many providers, fallback). TrendPulse uses it for messy-page extraction
+and optionally for Jev.
+
+```bash
+# Option A: separate service (see docker-compose.yml for the paired setup)
+docker run -p 20128:20128 diegosouzapw/omniroute
+```
+
+> ⚠️ **Change OmniRoute's default admin password first.** A gateway with a
+> default password on your network hands out your LLM keys to anyone who
+> finds the port. Do this before adding provider keys.
+
+Point setup at it: base URL `http://localhost:20128/v1`, your API key,
+and the extract model id from its model list (the setup probe shows them —
+pick one and paste it as the extract model).
+
+No OmniRoute? Any OpenAI-compatible base URL works in the same field.
+
+## Jev configuration examples
+
+Jev is "a model id that clusters and scores" — configure where it runs:
+
+- **Through OmniRoute (simplest):** leave `JEV_BASE_URL` empty, set
+  `JEV_MODEL` to a model/combo id that exists inside OmniRoute (e.g. `jev`
+  if you defined that combo, or any chat model id).
+- **Direct endpoint:** `JEV_BASE_URL=https://api.example.com/v1`,
+  `JEV_API_KEY=…`, `JEV_MODEL=<their model id>`.
+- Verify with the wizard's **Test with sample** (or
+  `POST /api/setup/test-jev`) — it runs a tiny JSON round-trip and reports
+  latency.
+
+## Daily operation
+
+- The scheduler runs `SCHEDULE_CRON` (default `0 6 * * *`) in `TZ`.
+  Missed runs catch up on boot (`RUN_MISSED_ON_START`).
+- **Today** shows the latest set + digest; **Runs** shows history, per-source
+  stats and the live log; **Explore** compares dates; **Raw Data** is the
+  full collection table; **Sources/Settings** tune everything without
+  touching `.env` (except secrets, which stay env-side by design).
+- Exports: per-day CSV/Markdown from Today, Raw Data, or
+  `/api/export/topics.(csv|md)`.
+- Retention (`RETENTION_DAYS`, `archive`/`delete`) prunes `raw_trends`
+  after each run into `archive_YYYY_MM` tabs or away.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `sheets tabs` FAIL 403 | Sheet not shared with the bot | Share with the service-account email as Editor, `npm run doctor` again |
+| `sheets tabs` WARN no id | `GOOGLE_SHEET_ID` empty | `npm run setup`, paste the ID from the sheet URL |
+| `omniroute /models` FAIL | Gateway down or wrong URL | Start OmniRoute / fix `OMNIROUTE_BASE_URL` |
+| `jev sample` FAIL | Bad model id or key | Check `JEV_MODEL`, key, and the fallback gateway |
+| Run stuck `running` | Process was killed mid-run | It resumes: `npm run pipeline -- retry <runId>` (boot marks it `interrupted`) |
+| Wizard bounces back after Finish | Cached `setup_complete=false` | Fixed in app (health revalidates); hard-refresh if you see it |
+| Dashboard empty after run | No items collected | Check Runs → per-source errors; sources may need keys/limits |
+| Port in use | Another instance running | One pipeline lock per machine; stop the other process |
+| `409 RUN_LOCKED` on trigger | A run is already going | Wait for it, or watch `/runs/:id/stream` |
+
+## Scraping etiquette
+
+Collectors identify with `USER_AGENT`, wait ≥1s per domain (Hacker News
+item fetches excepted by its API norms), honor `robots.txt` for feeds and
+pages (disallowed URLs are skipped with a log line, never fetched), retry
+with backoff, and never send cookies, bypass paywalls/logins/captchas, or
+touch non-public endpoints. If you add a source, keep it to official APIs
+or RSS, add the fixture + contract test, and confirm the politeness path
+before enabling it by default.
+
+## Project layout
+
+```
+server/src/{collectors,pipeline,sorting,llm,sheets,api,scheduler,config,db,utils}
+server/scripts/{setup,doctor,collect,run,rebuild-state}.ts
+server/test/**                    # vitest, mirrors src
+web/src/{pages,components,hooks,lib,wizard,styles}
+web/e2e/**                        # Playwright (fake HTTP backends)
+docs/                             # PRD → TRD → schema → plan pack
+```
+
+Key scripts: `dev` (both), `build`/`start` (prod single-port),
+`test`/`test:web`/`test:e2e`, `lint`, `doctor`, `setup`, `collect`,
+`pipeline`, `rebuild-state`.
+
+## API
 
 | Method | Path | Purpose | Key params |
 |--------|------|---------|-----------|

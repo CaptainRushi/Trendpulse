@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { testContext } from "../api/helpers.js";
 import type { TestApi } from "../api/helpers.js";
@@ -17,7 +18,7 @@ afterEach(async () => {
   await t.close();
 });
 
-function testApp(): ReturnType<typeof buildApp> {
+async function testApp(): Promise<FastifyInstance> {
   return buildApp({
     ...t.ctx,
     omnirouteBaseUrl: gateway.url,
@@ -28,7 +29,7 @@ function testApp(): ReturnType<typeof buildApp> {
 describe("POST /api/setup/test-omniroute", () => {
   it("returns the model list on success", async () => {
     gateway.enqueue({ models: ["jev", "extract-1"] });
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -45,7 +46,7 @@ describe("POST /api/setup/test-omniroute", () => {
   });
 
   it("rejects a missing base_url with VALIDATION", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -61,7 +62,7 @@ describe("POST /api/setup/test-omniroute", () => {
 
   it("unreachable hosts return ok:false, not a 500", async () => {
     await gateway.stop();
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -80,7 +81,7 @@ describe("POST /api/setup/test-omniroute", () => {
 
 describe("POST /api/setup/test-jev", () => {
   it("runs the sample completion against a direct endpoint", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -96,7 +97,7 @@ describe("POST /api/setup/test-jev", () => {
   });
 
   it("falls back to the configured OmniRoute endpoint when base_url is empty", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -112,7 +113,7 @@ describe("POST /api/setup/test-jev", () => {
   });
 
   it("rejects a missing model with VALIDATION", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -127,7 +128,7 @@ describe("POST /api/setup/test-jev", () => {
   });
 
   it("never echoes the api key", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -144,7 +145,7 @@ describe("POST /api/setup/test-jev", () => {
 
 describe("POST /api/setup/test-sheets", () => {
   it("reports missing sheet id without touching the network", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
@@ -159,7 +160,7 @@ describe("POST /api/setup/test-sheets", () => {
   });
 
   it("rejects non-JSON and wrong-shaped keys without echoing them", async () => {
-    const app = testApp();
+    const app = await testApp();
     try {
       for (const key of ["{oops", JSON.stringify({ nope: 1 })]) {
         const res = await app.inject({

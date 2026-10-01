@@ -17,6 +17,7 @@
     "rebuild-state": "tsx scripts/rebuild-state.ts"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.5",
     "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^16.4.5",

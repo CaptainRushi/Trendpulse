@@ -203,7 +203,23 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Reason:** Two identically-named nav landmarks confuse screen-reader users — and untyped e2e locators.
 - **Decision:** E2E fakes at the HTTP boundary (Playwright route interception); no live server needed.
 - **Reason:** Real backend behavior is already proven server-side (323 tests); e2e proves the frontend flow wizard → run → topics, including a statically-fulfilled SSE stream. The one exception: unmocked URLs hit the dead proxy loudly, which doubles as a missing-mock detector.
-- **Decision:** Axe serious/critical clean is the automated gate; Lighthouse ≥95 stays a manual check.
+
+## 2026-10-01 — Phase 9 Packaging and docs
+
+- **Decision:** Setup CLI is TTY-only, preserves `.env` comments/unknown keys in place, tests every connection live, and never prints secrets (retype-to-replace, 0600 on pasted key files).
+- **Reason:** A setup tool that clobbers hand-edits or leaks keys to scrollback would be worse than none. Non-TTY refuses loudly instead of half-running. Pure file logic (`envFile.ts`) is unit-tested; the prompts are verified by reading, not by faking stdin.
+- **Decision:** Doctor splits WARN (not configured — run setup) from FAIL (configured but broken) and never leaks key material.
+- **Reason:** A fresh checkout should report "3 things to configure", not 3 cryptic failures; a broken key must fail with the share/URL/key fix attached. Exit code stays meaningful for scripts.
+- **Decision:** Single-port prod via `@fastify/static` + SPA fallback only for non-`/api` paths; `buildApp` went async.
+- **Reason:** TRD §2 mandates one port. Gating the fallback on `/api/` keeps API 404s JSON while `/runs/...` serves the app. Async factory was the honest signature for plugin loading; the ~10 test call sites took `await`.
+- **Decision:** Debian-slim multi-stage Dockerfile (prebuilds, no toolchain); compose binds 0.0.0.0 with `DASHBOARD_PASSWORD` effectively mandatory; OmniRoute block ships commented.
+- **Reason:** Alpine/musl adds prebuild risk for zero size benefit here. An uncommented gateway service with an unvalidated image name would break `compose up` — the commented block documents the topology without asserting what wasn't verified (no docker daemon in this env to prove the build).
+- **Decision:** No screenshots in the SA walkthrough — exact console click-paths instead.
+- **Reason:** No GCP access in the build environment to capture real ones; precise paths plus the wizard's live test button are verifiable, stock photos would not be.
+- **Decision:** MIT with a `contributors` holder; CI gains build + web tests + e2e job.
+- **Reason:** No individual owner was ever named; contributors-holder is the honest default. CI previously ignored web entirely — the e2e job installs browsers itself so fresh runners work.
+- **Decision:** Live sort attempted during verification (real HN/Wikipedia → Jev, no sheet writes); blocked on a dead third-party gateway, run failed correctly.
+- **Reason:** Worth trying with the pieces present: collect→normalize succeeded on live data and `sort_map` failed with an actionable connection error instead of crashing — which is itself the designed behavior. Live LLM output quality remains unproven until credentials + a stable gateway exist (Phase 10 soak).- **Decision:** Axe serious/critical clean is the automated gate; Lighthouse ≥95 stays a manual check.
 - **Reason:** Lighthouse needs Chrome + the lighthouse package — unrunnable in this environment. Axe with the serious/critical filter is the honest automatable proxy, documented here.
 - **Decision:** Vite binds `--host 127.0.0.1`; Playwright webServer runs through `cmd /c` on Windows.
 - **Reason:** `localhost` bound IPv6 here, refusing the 127.0.0.1 URLs everything else uses; `npm` isn't directly spawnable on Windows.

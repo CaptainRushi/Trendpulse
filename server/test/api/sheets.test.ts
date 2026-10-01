@@ -7,7 +7,7 @@ describe("sheets admin", () => {
   it("init is idempotent, sync ok, link has the spreadsheet url", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const first = await app.inject({ method: "POST", url: "/api/sheets/init" });
         expect(first.json<{ created: string[] }>().created).toHaveLength(4);
@@ -32,7 +32,7 @@ describe("sheets admin", () => {
   it("requires a configured sheet id (SETUP_INCOMPLETE)", async () => {
     const t = testContext({ config: loadConfig({}) });
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         for (const [method, url] of [
           ["POST", "/api/sheets/init"],
@@ -56,7 +56,7 @@ describe("password gate", () => {
   it("401s without the password, passes with it, open when unset", async () => {
     const locked = testContext({ config: loadConfig({ DASHBOARD_PASSWORD: "s3cret" }) });
     try {
-      const app = buildApp(locked.ctx);
+      const app = await buildApp(locked.ctx);
       try {
         const anon = await app.inject({ method: "GET", url: "/api/health" });
         expect(anon.statusCode).toBe(401);

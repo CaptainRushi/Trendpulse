@@ -29,6 +29,11 @@ export interface AppContext {
   extractor?: LlmExtractor;
   /** Live scheduler (hot-restarted on schedule_cron/timezone PUT). */
   scheduler?: PipelineScheduler;
+  /**
+   * Absolute path to the built web UI (web/dist). When set, non-/api routes
+   * serve the SPA (single-port production, TRD §2); otherwise they 404.
+   */
+  staticDir?: string | undefined;
   /** Setup-probe fallback (Phase 2 compat): server-level OmniRoute route. */
   omnirouteBaseUrl?: string | undefined;
   omnirouteApiKey?: string | undefined;

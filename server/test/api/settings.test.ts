@@ -10,7 +10,7 @@ describe("settings", () => {
       config: loadConfig({ GOOGLE_SHEET_ID: "test-sheet", OMNIROUTE_API_KEY: "should-not-leak" }),
     });
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({ method: "GET", url: "/api/settings" });
         expect(res.statusCode).toBe(200);
@@ -34,7 +34,7 @@ describe("settings", () => {
   it("PUT updates values and reads them back", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const res = await app.inject({
           method: "PUT",
@@ -62,7 +62,7 @@ describe("settings", () => {
   it("rejects secrets, unknown keys and bad types", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         for (const payload of [
           { omniroute_api_key: "x" },
@@ -92,7 +92,7 @@ describe("settings", () => {
         timezone: "UTC",
         onTrigger: () => Promise.resolve(),
       });
-      const app = buildApp({ ...t.ctx, scheduler });
+      const app = await buildApp({ ...t.ctx, scheduler });
       try {
         const res = await app.inject({
           method: "PUT",

@@ -30,7 +30,7 @@ describe("GET /api/raw", () => {
     const t = testContext();
     try {
       await seed(t);
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const all = await app.inject({ method: "GET", url: "/api/raw" });
         expect(all.json<{ total: number }>().total).toBe(2);
@@ -63,7 +63,7 @@ describe("GET /api/raw", () => {
   it("rejects bad filters with VALIDATION", async () => {
     const t = testContext();
     try {
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         for (const url of ["/api/raw?status=bogus", "/api/raw?limit=0", "/api/raw?date=x"]) {
           const res = await app.inject({ method: "GET", url });
@@ -95,7 +95,7 @@ describe("exports", () => {
           top_urls: ["https://a.example.com/1"],
         }),
       ]);
-      const app = buildApp(t.ctx);
+      const app = await buildApp(t.ctx);
       try {
         const csv = await app.inject({ method: "GET", url: "/api/export/topics.csv?date=2026-09-30" });
         expect(csv.statusCode).toBe(200);
