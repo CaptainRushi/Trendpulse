@@ -1,0 +1,57 @@
+/* Design tokens — docs/03_UI_UX_DESIGN.md §4. Dark first, light supported. */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b0f17;
+  --surface: #121826;
+  --surface-2: #182033;
+  --border: #26304a;
+  --text: #e7eaf3;
+  --text-dim: #98a2b8;
+  --brand: #6366f1;
+  --good: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  --info: #38bdf8;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #f0f2f6;
+  --border: #e2e6ee;
+  --text: #0f1626;
+  --text-dim: #5b6478;
+  --brand: #4f46e5;
+  --good: #16a34a;
+  --warn: #d97706;
+  --bad: #dc2626;
+  --info: #0284c7;
+}
+
+/* Score ring bands (§4): 0–39 dim, 40–69 info, 70–84 brand, 85–100 good. */
+:root {
+  --score-low: var(--text-dim);
+  --score-mid: var(--info);
+  --score-high: var(--brand);
+  --score-top: var(--good);
+}
+
+/* Category hues (fixed per category; chip bg tints below in app.css). */
+:root {
+  --cat-tech: #60a5fa;
+  --cat-ai: #a78bfa;
+  --cat-business: #fbbf24;
+  --cat-finance: #34d399;
+  --cat-science: #22d3ee;
+  --cat-health: #fb7185;
+  --cat-politics: #94a3b8;
+  --cat-world: #2dd4bf;
+  --cat-sports: #fb923c;
+  --cat-entertainment: #f472b6;
+  --cat-culture: #e879f9;
+  --cat-gaming: #a3e635;
+  --cat-lifestyle: #e7c873;
+  --cat-other: #9ca3af;
+}

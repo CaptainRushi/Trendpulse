@@ -16,7 +16,7 @@ password (401 `UNAUTHORIZED` otherwise); unset = open localhost.
 | GET | `/trends` | Ranked topics (latest set, hidden excluded) | `date`, `category[]`, `source[]`, `momentum[]`, `min_score`, `q`, `sort` (score\|rank\|title), `limit` ≤100, `offset` |
 | GET | `/trends/:topic_id` | Topic + hydrated evidence items | — |
 | GET | `/digest` | Daily digest row | `date` |
-| GET | `/raw` | Raw items (`collected_at` UTC day for `date`) | `date`, `source[]`, `status[]` (pending\|sorted\|discarded\|sort_failed), `q`, `limit` ≤500, `offset` |
+| GET | `/raw` | Raw items (`collected_at` UTC day for `date`, `sort_status` per row) | `date`, `source[]`, `status[]` (pending\|sorted\|discarded\|sort_failed), `q`, `limit` ≤500, `offset` |
 | GET | `/dates` | Dates with data, newest first | — |
 | GET | `/sources` | Sources with config, health, requirements | — |
 | PUT | `/sources/:key` | Update a source | `{enabled?, item_limit?, config?}` (strict) |

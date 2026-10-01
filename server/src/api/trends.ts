@@ -122,7 +122,7 @@ const RawQuery = z.object({
 
 export const RawResponse = z.object({
   date: z.string().nullable(),
-  items: z.array(RawTrendRecord),
+  items: z.array(RawTrendRecord.extend({ sort_status: z.string().nullable() })),
   total: z.number().int(),
   warnings: z.number().int(),
   cache: z.object({ age_s: z.number() }),
@@ -197,18 +197,21 @@ export function registerTrends(app: FastifyInstance, ctx: AppContext): void {
     );
     let warnings = result.warnings;
     const ageS = result.ageS;
+    const statuses = sortStatuses(ctx, items.map((item) => item.id));
+    warnings += statuses.warnings;
     if (filter.status.length > 0) {
-      const statuses = sortStatuses(ctx, items.map((item) => item.id));
-      warnings += statuses.warnings;
       items = items.filter((item) => {
         const status = statuses.byId.get(item.id);
         return status !== undefined && filter.status.includes(status);
       });
     }
     const total = items.length;
+    const page = items
+      .slice(filter.offset, filter.offset + filter.limit)
+      .map((item) => ({ ...item, sort_status: statuses.byId.get(item.id) ?? null }));
     return RawResponse.parse({
       date: filter.date ?? null,
-      items: items.slice(filter.offset, filter.offset + filter.limit),
+      items: page,
       total,
       warnings,
       cache: { age_s: ageS },
