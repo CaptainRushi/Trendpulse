@@ -1,19 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
+import { testContext } from "../api/helpers.js";
+import type { TestApi } from "../api/helpers.js";
 import { FakeLlmServer } from "../fakes/fakeLlmServer.js";
 
 let gateway: FakeLlmServer;
+let t: TestApi;
 
 beforeEach(async () => {
   gateway = await FakeLlmServer.start();
+  t = testContext();
 });
 
 afterEach(async () => {
   await gateway.stop();
+  await t.close();
 });
 
 function testApp(): ReturnType<typeof buildApp> {
-  return buildApp({ version: "0.1.0-test", omnirouteBaseUrl: gateway.url, omnirouteApiKey: "omni-key" });
+  return buildApp({
+    ...t.ctx,
+    omnirouteBaseUrl: gateway.url,
+    omnirouteApiKey: "omni-key",
+  });
 }
 
 describe("POST /api/setup/test-omniroute", () => {
@@ -127,6 +136,41 @@ describe("POST /api/setup/test-jev", () => {
       });
       expect(res.statusCode).toBe(200);
       expect(res.body).not.toContain("super-secret-key");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("POST /api/setup/test-sheets", () => {
+  it("reports missing sheet id without touching the network", async () => {
+    const app = testApp();
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/setup/test-sheets",
+        payload: { sheet_id: "" },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<{ ok: boolean }>().ok).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects non-JSON and wrong-shaped keys without echoing them", async () => {
+    const app = testApp();
+    try {
+      for (const key of ["{oops", JSON.stringify({ nope: 1 })]) {
+        const res = await app.inject({
+          method: "POST",
+          url: "/api/setup/test-sheets",
+          payload: { sheet_id: "s", service_account_json: key },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json<{ ok: boolean }>().ok).toBe(false);
+      }
+      expect(gateway.seen).toHaveLength(0); // no network attempted
     } finally {
       await app.close();
     }

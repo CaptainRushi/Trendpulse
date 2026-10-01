@@ -81,6 +81,22 @@ const PRE_PERSIST: StageName[] = ["collect", "normalize", "dedupe", "engagement_
 
 export type RunTrigger = "cron" | "manual" | "catchup";
 
+/** Operator errors: bad run id, wrong state, bad stage selection (HTTP 400/404). */
+export class RunNotFoundError extends Error {
+  constructor(runId: string) {
+    super(`run ${runId} not found`);
+    this.name = "RunNotFoundError";
+  }
+}
+
+/** Operator errors: valid run, invalid request (HTTP 400). */
+export class RunRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RunRequestError";
+  }
+}
+
 export interface OrchestratorDeps {
   db: StateDb;
   config: TrendPulseConfig;
@@ -105,6 +121,8 @@ export interface StartRunOptions {
   sources?: SourceKey[];
   /** Override every source limit (CLI --limit). */
   limit?: number;
+  /** Route-generated id for 202-before-completion (default: fresh ULID). */
+  runId?: string;
 }
 
 export interface RunSummary {
@@ -157,59 +175,76 @@ export class Orchestrator {
 
   /** Fresh run through the requested stages (default: all ten). */
   async startRun(options: StartRunOptions): Promise<RunSummary> {
+    return this.startRunBackground(options).done;
+  }
+
+  /**
+   * Synchronous setup (validation, lock, run row) + deferred execution.
+   * LockBusyError throws synchronously so POST /runs can answer 409
+   * before sending 202; stage failures surface via `done`.
+   */
+  startRunBackground(options: StartRunOptions): { runId: string; done: Promise<RunSummary> } {
     const requested = options.stages ?? [...STAGES];
-    if (requested.length === 0) throw new Error("at least one stage must be requested");
+    if (requested.length === 0) throw new RunRequestError("at least one stage must be requested");
     for (const stage of requested) {
       if (!(STAGES as readonly string[]).includes(stage)) {
-        throw new Error(`unknown stage '${stage}' (stages: ${STAGES.join(", ")})`);
+        throw new RunRequestError(`unknown stage '${stage}' (stages: ${STAGES.join(", ")})`);
       }
     }
-    const runId = ulid();
+    const runId = options.runId ?? ulid();
     const runDate = options.runDate ?? new Date().toLocaleDateString("en-CA", { timeZone: this.config.tz });
     acquirePipelineLock(this.db, runId);
+    const startedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO runs (id, run_date, trigger, status, stages_requested, started_at)
+         VALUES (?, ?, ?, 'running', ?, ?)`,
+      )
+      .run(runId, runDate, options.trigger, JSON.stringify(requested), startedAt);
+    for (const stage of requested) {
+      this.setStage(runId, stage, "pending");
+    }
+    const { settings, warnings } = resolveEffectiveSettings(this.db, this.config);
+    for (const warning of warnings) this.log.warn({ runId }, warning);
+    this.ensureSources();
+    const sources = options.sources ?? this.enabledSources();
+    if (sources.length === 0) {
+      releasePipelineLock(this.db, runId);
+      throw new RunRequestError("no enabled sources (see sources table)");
+    }
+    const exec: Execution = {
+      runId,
+      runDate,
+      trigger: options.trigger,
+      requested,
+      sources,
+      settings,
+      drafts: [],
+      sourceStats: [],
+      partialReasons: [...warnings],
+    };
+    if (options.limit !== undefined) exec.limitOverride = options.limit;
+    const first = requested[0];
+    if (!first) throw new RunRequestError("at least one stage must be requested");
+    const done = this.runLocked(exec, first);
+    return { runId, done };
+  }
+
+  private async runLocked(exec: Execution, from: StageName): Promise<RunSummary> {
     const heartbeat = setInterval(() => {
-      heartbeatPipelineLock(this.db, runId);
+      heartbeatPipelineLock(this.db, exec.runId);
     }, LOCK_HEARTBEAT_MS);
     try {
-      const startedAt = new Date().toISOString();
-      this.db
-        .prepare(
-          `INSERT INTO runs (id, run_date, trigger, status, stages_requested, started_at)
-           VALUES (?, ?, ?, 'running', ?, ?)`,
-        )
-        .run(runId, runDate, options.trigger, JSON.stringify(requested), startedAt);
-      for (const stage of requested) {
-        this.setStage(runId, stage, "pending");
-      }
-      const { settings, warnings } = resolveEffectiveSettings(this.db, this.config);
-      for (const warning of warnings) this.log.warn({ runId }, warning);
-      this.ensureSources();
-      const sources = options.sources ?? this.enabledSources();
-      if (sources.length === 0) throw new Error("no enabled sources (see sources table)");
-      const exec: Execution = {
-        runId,
-        runDate,
-        trigger: options.trigger,
-        requested,
-        sources,
-        settings,
-        drafts: [],
-        sourceStats: [],
-        partialReasons: [...warnings],
-      };
-      if (options.limit !== undefined) exec.limitOverride = options.limit;
-      const first = requested[0];
-      if (!first) throw new Error("at least one stage must be requested");
-      await this.executeFrom(exec, first);
+      await this.executeFrom(exec, from);
       return this.finishRun(exec);
     } catch (error) {
-      // finishRun checkpoints the failure for operational errors; unexpected
-      // errors propagate with stage/run left running (kill semantics).
-      if (isOperationalError(error)) return this.finishFailed(runId, error);
+      // finishFailed checkpoints the failure for operational errors;
+      // unexpected errors propagate with stage/run left running.
+      if (isOperationalError(error)) return this.finishFailed(exec.runId, error);
       throw error;
     } finally {
       clearInterval(heartbeat);
-      releasePipelineLock(this.db, runId);
+      releasePipelineLock(this.db, exec.runId);
     }
   }
 
@@ -220,63 +255,64 @@ export class Orchestrator {
    * content and re-preparing would mint new ULIDs for the same stories.
    */
   async retryRun(runId: string, fromStage?: StageName): Promise<RunSummary> {
+    return this.retryRunBackground(runId, fromStage).done;
+  }
+
+  /** Synchronous setup + deferred resume (same 202/409 contract as start). */
+  retryRunBackground(runId: string, fromStage?: StageName): { runId: string; done: Promise<RunSummary> } {
     const row = this.db.prepare("SELECT id, run_date, trigger, status, stages_requested FROM runs WHERE id = ?").get(runId) as
       | { id: string; run_date: string; trigger: RunTrigger; status: string; stages_requested: string }
       | undefined;
-    if (!row) throw new Error(`run ${runId} not found`);
+    if (!row) throw new RunNotFoundError(runId);
     const requested = JSON.parse(row.stages_requested) as StageName[];
     if (!Array.isArray(requested) || requested.length === 0) {
-      throw new Error(`run ${runId} has no pipeline stages (not an orchestrator run?)`);
+      throw new RunRequestError(`run ${runId} has no pipeline stages (not an orchestrator run?)`);
     }
     if (row.status !== "failed" && row.status !== "interrupted") {
-      throw new Error(`run ${runId} is ${row.status} — only failed/interrupted runs resume`);
+      throw new RunRequestError(`run ${runId} is ${row.status} — only failed/interrupted runs resume`);
     }
     acquirePipelineLock(this.db, runId);
-    const heartbeat = setInterval(() => {
-      heartbeatPipelineLock(this.db, runId);
-    }, LOCK_HEARTBEAT_MS);
-    try {
-      const statuses = this.stageStatuses(runId);
-      const firstOpen = requested.find((stage) => statuses.get(stage) !== "done");
-      const from = fromStage ?? firstOpen;
-      if (!from) throw new Error(`run ${runId} has nothing to resume (all stages done)`);
-      if (!requested.includes(from)) throw new Error(`stage '${from}' was not requested by run ${runId}`);
-      if (PRE_PERSIST.includes(from) && this.hasPersistedRows(runId)) {
-        throw new Error(
-          `run ${runId} already persisted rows — resume from sort_map or later, or start a new run`,
-        );
-      }
-      // Rewind from..end to pending; earlier done stages stay done.
-      const reset = this.db.prepare("UPDATE run_stages SET status = 'pending' WHERE run_id = ? AND stage = ?");
-      let rewinding = false;
-      for (const stage of requested) {
-        if (stage === from) rewinding = true;
-        if (rewinding) reset.run(runId, stage);
-      }
-      this.db.prepare("UPDATE runs SET status = 'running', error = NULL WHERE id = ?").run(runId);
-      const { settings, warnings } = resolveEffectiveSettings(this.db, this.config);
-      for (const warning of warnings) this.log.warn({ runId }, warning);
-      this.ensureSources();
-      const exec: Execution = {
-        runId,
-        runDate: row.run_date,
-        trigger: row.trigger,
-        requested,
-        sources: this.enabledSources(),
-        settings,
-        drafts: [],
-        sourceStats: this.loadSourceStats(runId),
-        partialReasons: [...warnings],
-      };
-      await this.executeFrom(exec, from);
-      return this.finishRun(exec);
-    } catch (error) {
-      if (isOperationalError(error)) return this.finishFailed(runId, error);
-      throw error;
-    } finally {
-      clearInterval(heartbeat);
+    const statuses = this.stageStatuses(runId);
+    const firstOpen = requested.find((stage) => statuses.get(stage) !== "done");
+    const from = fromStage ?? firstOpen;
+    if (!from) {
       releasePipelineLock(this.db, runId);
+      throw new RunRequestError(`run ${runId} has nothing to resume (all stages done)`);
     }
+    if (!requested.includes(from)) {
+      releasePipelineLock(this.db, runId);
+      throw new RunRequestError(`stage '${from}' was not requested by run ${runId}`);
+    }
+    if (PRE_PERSIST.includes(from) && this.hasPersistedRows(runId)) {
+      releasePipelineLock(this.db, runId);
+      throw new RunRequestError(
+        `run ${runId} already persisted rows — resume from sort_map or later, or start a new run`,
+      );
+    }
+    // Rewind from..end to pending; earlier done stages stay done.
+    const reset = this.db.prepare("UPDATE run_stages SET status = 'pending' WHERE run_id = ? AND stage = ?");
+    let rewinding = false;
+    for (const stage of requested) {
+      if (stage === from) rewinding = true;
+      if (rewinding) reset.run(runId, stage);
+    }
+    this.db.prepare("UPDATE runs SET status = 'running', error = NULL WHERE id = ?").run(runId);
+    const { settings, warnings } = resolveEffectiveSettings(this.db, this.config);
+    for (const warning of warnings) this.log.warn({ runId }, warning);
+    this.ensureSources();
+    const exec: Execution = {
+      runId,
+      runDate: row.run_date,
+      trigger: row.trigger,
+      requested,
+      sources: this.enabledSources(),
+      settings,
+      drafts: [],
+      sourceStats: this.loadSourceStats(runId),
+      partialReasons: [...warnings],
+    };
+    const done = this.runLocked(exec, from);
+    return { runId, done };
   }
 
   /**
@@ -286,7 +322,7 @@ export class Orchestrator {
    */
   async resortRun(runDate: string, options: { sources?: SourceKey[] } = {}): Promise<RunSummary> {
     const items = readRunItemsByDate(this.db, runDate);
-    if (items.length === 0) throw new Error(`no persisted items for date ${runDate} — nothing to re-sort`);
+    if (items.length === 0) throw new RunRequestError(`no persisted items for date ${runDate} — nothing to re-sort`);
     const summary = await this.startRun({
       trigger: "manual",
       runDate,
@@ -472,7 +508,7 @@ export class Orchestrator {
       batchCount?: unknown;
     } | null;
     if (!detail || !Array.isArray(detail.topics)) {
-      throw new Error(`sort_map output missing for run ${exec.runId} — run sort_map first`);
+      throw new RunRequestError(`sort_map output missing for run ${exec.runId} — run sort_map first`);
     }
     return {
       topics: detail.topics as JevTopic[],
@@ -501,7 +537,7 @@ export class Orchestrator {
   private stageScore(exec: Execution): void {
     const detail = this.stageDetail(exec.runId, "sort_reduce") as { topics?: unknown } | null;
     if (!detail || !Array.isArray(detail.topics)) {
-      throw new Error(`sort_reduce output missing for run ${exec.runId} — run sort_reduce first`);
+      throw new RunRequestError(`sort_reduce output missing for run ${exec.runId} — run sort_reduce first`);
     }
     const items = this.sortItems(exec);
     const itemsById = new Map(items.map((item) => [item.id, item]));
@@ -545,7 +581,7 @@ export class Orchestrator {
   private async stagePersistSorted(exec: Execution): Promise<void> {
     const detail = this.stageDetail(exec.runId, "score") as { topics?: unknown } | null;
     if (!detail || !Array.isArray(detail.topics)) {
-      throw new Error(`score output missing for run ${exec.runId} — run score first`);
+      throw new RunRequestError(`score output missing for run ${exec.runId} — run score first`);
     }
     const topics = detail.topics as SortedTrendRecord[];
     const repo = this.repo();

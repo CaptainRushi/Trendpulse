@@ -18,8 +18,8 @@ export interface SchedulerOptions {
 }
 
 export class PipelineScheduler {
-  private readonly expression: string;
-  private readonly timezone: string;
+  private expression: string;
+  private timezone: string;
   private readonly onTrigger: (trigger: RunTrigger) => Promise<unknown>;
   private readonly log: Logger;
   private task: cron.ScheduledTask | null = null;
@@ -60,6 +60,24 @@ export class PipelineScheduler {
   stop(): void {
     this.task?.stop();
     this.task = null;
+  }
+
+  /**
+   * Hot-restart with a new expression/timezone (settings PUT). Keeps the
+   * running state: a live scheduler stays live on the new schedule.
+   */
+  reschedule(cronExpression: string, timezone: string): void {
+    if (!cron.validate(cronExpression)) {
+      throw new Error(
+        `Invalid SCHEDULE_CRON: ${JSON.stringify(cronExpression)} (expected 5-field cron, e.g. "0 6 * * *")`,
+      );
+    }
+    const wasRunning = this.task !== null;
+    this.task?.stop();
+    this.task = null;
+    this.expression = cronExpression;
+    this.timezone = timezone;
+    if (wasRunning) this.start();
   }
 
   get running(): boolean {

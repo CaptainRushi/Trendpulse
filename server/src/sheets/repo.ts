@@ -52,6 +52,8 @@ export interface AppendResult {
 export interface ReadResult<T> {
   rows: T[];
   warnings: number;
+  /** Seconds since the underlying sheet read (0 = just fetched). */
+  ageS: number;
 }
 
 export interface RetainOptions {
@@ -90,6 +92,11 @@ export class SheetsRepo {
   sync(): Promise<void> {
     this.cache.invalidate();
     return Promise.resolve();
+  }
+
+  /** Liveness check for /api/health: lists tabs without mutating anything. */
+  async ping(): Promise<string[]> {
+    return this.client.getTabTitles(this.spreadsheetId);
   }
 
   /**
@@ -157,16 +164,23 @@ export class SheetsRepo {
   }
 
   async readRaw(filter: { runId?: string } = {}): Promise<ReadResult<RawTrendRecord>> {
-    const key = `raw:${filter.runId ?? ""}`;
-    const cached = this.cache.get<ReadResult<RawTrendRecord>>(key);
-    if (cached) return cached.value;
+    // One shared entry holds the unfiltered rows; runId filtering applies
+    // on every read (the old per-filter keys each stored a full copy).
+    const cached = this.cache.get<{ rows: RawTrendRecord[]; warnings: number }>("raw:all");
+    if (cached) {
+      const rows =
+        filter.runId === undefined
+          ? cached.value.rows
+          : cached.value.rows.filter((r) => r.run_id === filter.runId);
+      return { rows, warnings: cached.value.warnings, ageS: cached.ageS };
+    }
     const values = await this.client.getAllValues(this.spreadsheetId, RAW_TRENDS_TAB);
     const result = parseDataRows(values, rowToRawRecord);
+    // Cache the unfiltered set; runId filtering applies on every read.
+    this.cache.set("raw:all", { rows: result.rows, warnings: result.warnings });
     const rows =
       filter.runId === undefined ? result.rows : result.rows.filter((r) => r.run_id === filter.runId);
-    const out = { rows, warnings: result.warnings };
-    this.cache.set(key, out);
-    return out;
+    return { rows, warnings: result.warnings, ageS: 0 };
   }
 
   async readSorted(
@@ -174,8 +188,8 @@ export class SheetsRepo {
   ): Promise<ReadResult<SortedTrendRecord>> {
     const onlyLatest = filter.onlyLatest ?? true;
     const key = `sorted:${filter.runDate ?? ""}:${onlyLatest ? "latest" : "all"}`;
-    const cached = this.cache.get<ReadResult<SortedTrendRecord>>(key);
-    if (cached) return cached.value;
+    const cached = this.cache.get<{ rows: SortedTrendRecord[]; warnings: number }>(key);
+    if (cached) return { rows: cached.value.rows, warnings: cached.value.warnings, ageS: cached.ageS };
     const values = await this.client.getAllValues(this.spreadsheetId, SORTED_TRENDS_TAB);
     const result = parseDataRows(values, rowToSortedRecord);
     const rows = result.rows.filter(
@@ -184,36 +198,35 @@ export class SheetsRepo {
         (!onlyLatest || r.is_latest) &&
         !r.hidden,
     );
-    const out = { rows, warnings: result.warnings };
-    this.cache.set(key, out);
-    return out;
+    this.cache.set(key, { rows, warnings: result.warnings });
+    return { rows, warnings: result.warnings, ageS: 0 };
   }
 
   /** Latest digest row for the date (append-only → last matching row wins). */
   async readDigest(
     runDate: string,
-  ): Promise<{ row: DigestRecord | null; warnings: number }> {
+  ): Promise<{ row: DigestRecord | null; warnings: number; ageS: number }> {
     const key = `digest:${runDate}`;
     const cached = this.cache.get<{ row: DigestRecord | null; warnings: number }>(key);
-    if (cached) return cached.value;
+    if (cached) return { ...cached.value, ageS: cached.ageS };
     const values = await this.client.getAllValues(this.spreadsheetId, DAILY_DIGEST_TAB);
     const result = parseDataRows(values, rowToDigestRecord);
     const matches = result.rows.filter((r) => r.run_date === runDate && r.is_latest);
     const latest = matches.length > 0 ? matches[matches.length - 1] : null;
     const out = { row: latest ?? null, warnings: result.warnings };
     this.cache.set(key, out);
-    return out;
+    return { ...out, ageS: 0 };
   }
 
   /** Full run history, newest last (append-only). Feeds the Runs page. */
   async readRunLog(): Promise<ReadResult<RunLogRecord>> {
     const key = "runs:all";
-    const cached = this.cache.get<ReadResult<RunLogRecord>>(key);
-    if (cached) return cached.value;
+    const cached = this.cache.get<{ rows: RunLogRecord[]; warnings: number }>(key);
+    if (cached) return { rows: cached.value.rows, warnings: cached.value.warnings, ageS: cached.ageS };
     const values = await this.client.getAllValues(this.spreadsheetId, RUNS_LOG_TAB);
     const out = parseDataRows(values, rowToRunLogRecord);
-    this.cache.set(key, out);
-    return out;
+    this.cache.set(key, { rows: out.rows, warnings: out.warnings });
+    return { rows: out.rows, warnings: out.warnings, ageS: 0 };
   }
 
   /**
@@ -357,7 +370,7 @@ function parseDataRows<T>(values: string[][], parse: (cells: string[]) => T): Re
       else throw error;
     }
   });
-  return { rows, warnings };
+  return { rows, warnings, ageS: 0 };
 }
 
 function columnLetter(index: number): string {

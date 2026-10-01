@@ -88,8 +88,10 @@ async function main(): Promise<void> {
 
   const app = buildApp({
     version: APP_VERSION,
-    omnirouteBaseUrl: config.omnirouteBaseUrl,
-    omnirouteApiKey: config.omnirouteApiKey,
+    config,
+    db,
+    log: logger,
+    scheduler,
   });
   try {
     await app.listen({ port: config.port, host: config.host });
