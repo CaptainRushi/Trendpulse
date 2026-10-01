@@ -9,6 +9,9 @@
   --text: #e7eaf3;
   --text-dim: #98a2b8;
   --brand: #6366f1;
+  /* Text-bearing fills (buttons, pressed chips): white-on-brand must clear
+     4.5:1 — #6366f1 only reaches 4.46 (axe). Same hue family, darker. */
+  --brand-strong: #4f46e5;
   --good: #22c55e;
   --warn: #f59e0b;
   --bad: #ef4444;
@@ -24,6 +27,7 @@
   --text: #0f1626;
   --text-dim: #5b6478;
   --brand: #4f46e5;
+  --brand-strong: #4f46e5;
   --good: #16a34a;
   --warn: #d97706;
   --bad: #dc2626;

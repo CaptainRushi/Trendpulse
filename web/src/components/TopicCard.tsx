@@ -19,20 +19,32 @@ export function TopicCard({
     <article
       className="topic-card"
       data-selected={selected || undefined}
-      onClick={() => { onOpen(topic); }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" && event.target === event.currentTarget) onOpen(topic);
+      onClick={(event) => {
+        // Nested controls (title button, copy buttons, angles) handle their
+        // own clicks — the card itself opens only for bare-surface clicks.
+        const target = event.target as HTMLElement | null;
+        if (target && target.closest("button, a, summary, select, input")) return;
+        onOpen(topic);
       }}
-      tabIndex={0}
-      role="button"
-      aria-label={`${topic.title} (score ${String(topic.trend_score)})`}
     >
       <div className="topic-card-head">
         <strong aria-label={`Rank ${String(topic.rank)}`}>{topic.rank}</strong>
         <ScoreRing score={topic.trend_score} />
         <MomentumBadge momentum={topic.momentum} />
       </div>
-      <h3>{topic.title}</h3>
+      <h3>
+        <button
+          type="button"
+          className="title-button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(topic);
+          }}
+          aria-label={`${topic.title} (score ${String(topic.trend_score)}, open details)`}
+        >
+          {topic.title}
+        </button>
+      </h3>
       <p>{topic.summary}</p>
       <div className="topic-card-meta">
         <CategoryChip category={topic.category} />

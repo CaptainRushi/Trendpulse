@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   CalendarDays,
   Compass,
@@ -63,16 +63,13 @@ function Shell(): React.JSX.Element {
   const runs = useRuns(1, 0);
   const latestStatus = runs.data?.runs[0]?.status;
 
-  // First run → full-screen wizard (design §2), once health resolves.
+  // First run → full-screen setup wizard (design §2), once health resolves.
   const setupComplete = health.data?.setup_complete;
+  if (health.isPending) {
+    return <div className="page" aria-label="Loading" />;
+  }
   if (setupComplete === false && location.pathname !== "/wizard") {
-    return (
-      <div className="page">
-        <p>
-          Welcome to TrendPulse. <Link to="/wizard">Open the setup wizard</Link> to connect your sheet and models.
-        </p>
-      </div>
-    );
+    return <Navigate to="/wizard" replace />;
   }
 
   return (
@@ -192,7 +189,7 @@ function Shell(): React.JSX.Element {
         <Outlet />
       </main>
 
-      <nav className="tabbar" aria-label="Primary">
+      <nav className="tabbar" aria-label="Sections">
         {NAV.slice(0, 5).map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end ?? false}>
             <item.icon size={20} aria-hidden="true" /> {item.label}

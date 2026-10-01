@@ -1,7 +1,7 @@
 import type React from "react";
 import type { TopicFilters } from "../hooks/useFilters";
 
-const CATEGORIES = ["Tech", "AI", "Business", "Science", "Health", "Politics", "World", "Sports", "Entertainment", "Culture", "Gaming", "Lifestyle", "Other"];
+const CATEGORIES = ["Tech", "AI", "Business", "Finance", "Science", "Health", "Politics", "World", "Sports", "Entertainment", "Culture", "Gaming", "Lifestyle", "Other"];
 const MOMENTUMS = ["new", "rising", "peak", "steady", "fading"];
 
 /** Filter bar (§5.1): category/source chips, momentum, min-score, search, sort. */

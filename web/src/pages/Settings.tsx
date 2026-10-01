@@ -40,8 +40,10 @@ export function Settings(): React.JSX.Element {
             role="tab"
             aria-selected={tab === name}
             className="chip"
-            aria-pressed={tab === name}
-            onClick={() => { setTab(name); }}
+            data-active={tab === name || undefined}
+            onClick={() => {
+              setTab(name);
+            }}
           >
             {name}
           </button>

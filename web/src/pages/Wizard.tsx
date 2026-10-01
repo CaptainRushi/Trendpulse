@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import { useSources } from "../hooks/useApi.js";
 import { useToast } from "../components/Toast.js";
@@ -33,6 +34,7 @@ export function Wizard(): React.JSX.Element {
   const [finishing, setFinishing] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const sources = useSources();
 
   useEffect(() => {
@@ -115,6 +117,14 @@ export function Wizard(): React.JSX.Element {
           // Ignore.
         }
         toast({ tone: "good", message: "Setup complete — first collection started." });
+        // Revalidate health BEFORE navigating: the setup gate redirects on
+        // stale setup_complete=false, bouncing a finished user back here.
+        return queryClient
+          .invalidateQueries({ queryKey: ["health"] })
+          .catch(() => undefined)
+          .then(() => run);
+      })
+      .then((run) => {
         void navigate(`/runs/${run.run_id}`);
       })
       .catch((error: unknown) => {
