@@ -31,7 +31,8 @@ export function createExtractor(client: LlmClient): LlmExtractor {
         schema: ExtractedPage,
         tag: tag ?? "extract",
       });
-      return data;
+      // Contract cap (TRD §8.1): snippet <= 400 chars, enforced in code.
+      return { ...data, snippet: data.snippet.slice(0, 400) };
     },
   };
 }

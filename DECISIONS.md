@@ -288,3 +288,21 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Reason:** `mapError` has no key-file access; threading the email through the error path ripples for zero operator gain. SHT-05 pins code + no-retry.
 - **Decision:** Plain `.nullable()` (not `.default(null)`) for `source_label`.
 - **Reason:** `.default()` + `exactOptionalPropertyTypes` broke `parseWith` inference; explicit null at 5 sites is dumber and green.
+
+## 2026-10-02 — Step 3 llm + jev (docs/12 Prompt 3, ponytail full)
+
+- **Decision:** New `server/src/llm/jev.ts`: SystemOne typed client exactly per CLAUDE.md (`{model, state, questions}` → typed `answers`). State capped at 4000 chars (equal per-key share); unknown `choice` → `none` + `choice_coerced`; missing answer → `label_missing` (choice `none`/0, noul 0); 429/5xx retry w/ Retry-After; semaphore at JEV_CONCURRENCY; input priced chars/4 at JEV_PRICE_PER_M_INPUT (answers free); budget breach throws `JevBudgetExceeded` (no silent fallback spend); key never in records/errors.
+- **Reason:** Step-3 task 4 verbatim. No JSON repair (typed API throws deterministically).
+- **Decision:** New `classifier.ts` (`Classifier` + `JevClassifier` + `FallbackClassifier` at temp 0 via `OMNIROUTE_FALLBACK_MODEL`, same coerce rules, flagged `fallback`) and `classifyWithFallback` (timeout/http/validation → fallback when `JEV_FALLBACK`; budget always propagates).
+- **Reason:** "Timeout twice or hard failure → fallback" implemented as exhausted-retries → fallback; retry counts live in the clients. Existing chat-protocol sorter untouched (rewire is Step 6).
+- **Decision:** New `labelCache.ts` on `item_labels`; key folds the question in (`content_hash|version|model|question`).
+- **Reason:** The Day-1 formula without the question collides across an item's questions under the UNIQUE key. Model/version change misses by query.
+- **Decision:** `cost_usd` added: `LlmCallRecord.costUsd?` + `recordLlmCall` + migration `006_llm_cost.sql` (nullable `ALTER TABLE`).
+- **Reason:** Step-3 task 2 requires per-call cost in `llm_calls`; nullable keeps old rows/tests valid.
+- **Decision:** Factory throws on empty model (`OMNIROUTE_EXTRACT_MODEL` / `JEV_MODEL`); explicit Jev endpoint never rides OmniRoute (LLM-13). Extractor slices snippet to 400 post-parse.
+- **Reason:** Fail fast with the var name beats per-call gateway errors; prompt already says ≤400, code enforces.
+- **Decision:** New `test/fakes/fakeJevServer.ts` (modal defaults + queued 429/500/delay/answers overrides, records Bearer presence + body) and `server/scripts/check-llm.ts` (`check:llm`: live `/models` + one real SystemOne classify → sanitized `test/fixtures/jev/real-sample.json`; mismatch exits 2).
+- **Reason:** Step-3 tasks 7–8. JEV-03 test auto-skips until the fixture exists.
+- **Decision:** New `test/llm/llm-step3.test.ts` (23 pass + JEV-03 skip: LLM-04…14 incl. semaphore unit for LLM-14, JEV-01/02/04…13).
+- **Reason:** IDs per rule 9; LLM-14 tests the shared semaphore primitive (OmniRoute caps stay caller-enforced per Phase-2 decision).
+- **Live result:** `check:llm` → OmniRoute key present in env but gateway unreachable (`fetch failed`); no Jev direct key → classification skipped, no fixture. Needs: running gateway + `JEV_API_KEY` (+ `JEV_BASE_URL` or explicit direct endpoint).

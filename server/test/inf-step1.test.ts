@@ -57,12 +57,13 @@ describe("STEP 1 foundation", () => {
     const db = openDatabase(":memory:");
     try {
       const applied = applyMigrations(db);
-      // Gap allowed: 001 then 003 (002_scraping arrives later).
+      // Gap allowed: 001 then 003 then 006 (002/004/005 arrive later).
       expect(applied).toContain(1);
       expect(applied).toContain(3);
+      expect(applied).toContain(6);
       expect(applied).not.toContain(2);
       const versions = listMigrations().map((m) => m.version);
-      expect(versions).toEqual([1, 3]);
+      expect(versions).toEqual([1, 3, 6]);
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
@@ -76,7 +77,7 @@ describe("STEP 1 foundation", () => {
       const rows = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as {
         version: number;
       }[];
-      expect(rows.map((r) => r.version)).toEqual([1, 3]);
+      expect(rows.map((r) => r.version)).toEqual([1, 3, 6]);
     } finally {
       db.close();
     }

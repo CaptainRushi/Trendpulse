@@ -13,6 +13,11 @@ export interface ClientHooks {
 }
 
 export function createExtractorClient(config: TrendPulseConfig, hooks: ClientHooks = {}): LlmClient {
+  if (config.omnirouteExtractModel.trim() === "") {
+    throw new Error(
+      "Missing model: set OMNIROUTE_EXTRACT_MODEL to the extractor model id in OmniRoute.",
+    );
+  }
   return new LlmClient({
     baseUrl: config.omnirouteBaseUrl,
     apiKey: config.omnirouteApiKey,
@@ -25,6 +30,9 @@ export function createExtractorClient(config: TrendPulseConfig, hooks: ClientHoo
 
 export function createJevClient(config: TrendPulseConfig, hooks: ClientHooks = {}): LlmClient {
   const endpoint = resolveJevEndpoint(config);
+  if (endpoint.model.trim() === "") {
+    throw new Error("Missing model: set JEV_MODEL to the Jev model id (e.g. jev-latest).");
+  }
   return new LlmClient({
     baseUrl: endpoint.baseUrl,
     apiKey: endpoint.apiKey,

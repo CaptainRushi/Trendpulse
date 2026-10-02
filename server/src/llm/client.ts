@@ -57,6 +57,8 @@ export interface LlmCallRecord {
   latencyMs: number;
   attempt: number;
   error?: string | undefined;
+  /** Estimated spend (Jev input pricing). Absent for pre-cost callers. */
+  costUsd?: number | undefined;
 }
 
 export interface LlmClientOptions {

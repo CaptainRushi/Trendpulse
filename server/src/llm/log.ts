@@ -7,8 +7,8 @@ import type { LlmCallRecord } from "./client.js";
 export function recordLlmCall(db: StateDb, runId: string | null, record: LlmCallRecord): void {
   db.prepare(
     `INSERT INTO llm_calls
-       (run_id, tag, client, model, status, http_status, tokens_in, tokens_out, latency_ms, attempt, error)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (run_id, tag, client, model, status, http_status, tokens_in, tokens_out, latency_ms, attempt, error, cost_usd)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     runId,
     record.tag,
@@ -21,5 +21,6 @@ export function recordLlmCall(db: StateDb, runId: string | null, record: LlmCall
     record.latencyMs,
     record.attempt,
     record.error ?? null,
+    record.costUsd ?? null,
   );
 }
