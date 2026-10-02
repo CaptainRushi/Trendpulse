@@ -320,6 +320,12 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Fix:** Gateway always streams SSE chunks (`chat.completion.chunk` + `delta.content`), even without `stream:true` — `response.json()` choked on the `data:` framing. `LlmClient.postOnce` now accumulates `data:` deltas + final-chunk usage, with `LLM-15` pinning it (new Day-1 ID for the SSE-tolerant envelope; wiring deferred to check:plan).
 - **Notes:** machine env `OMNIROUTE_API_KEY` differs from `.env` and wins (dotenv never overrides) — remove the machine var or keep it deliberately. `GET /v1/models` hangs unanswered (gateway likely unimplemented); `/models`-based probes stay red, chat path green. FakeLlmServer gained `rawBody` passthrough for stream fixtures.
 
+## 2026-10-02 — Free-only OmniRoute models (user constraint: no paid models)
+
+- **Catalog:** `/v1/models` lists 7794 entries; 528 carry a `:free` suffix plus the `auto/best-free` free-only auto combo. No pricing fields — `:free` suffix is the free marker.
+- **Pinned (`.env`, gitignored):** writer `auto/best-free` (concise on-spec cards, ~10s, auto-failover), extractor `ur/gpt-4o:free` (valid JSON, ~2–5s), fallback `auto/best-free` (resilient path when Jev is down).
+- **Observed:** free-tier capacity fluctuates — `gemini-3.6-flash:free` 429, `deepseek-v4-flash:free` 503, `kimi-k3:free` 429, `auto/best-free` once answered `{"ok":false}` to a ping (fluke; correct on retry + writer-shape). verdict: `auto/*` routing plus existing retry/backoff/per-page-degrade absorb it; `gpt-4o:free` summaries run long (writer caps enforced downstream in Step 6, which is why it is extractor-only).
+
 ## 2026-10-02 — Step 4 collectors (docs/12 Prompt 4, ponytail full)
 
 - **Decision:** New `blocked` source status (`SourceStats` enum): reddit 403/429 on every sub with zero items → `blocked` (not `error`); orchestrator counts blocked as a partial reason; `run_source_stats` needs no migration (TEXT, no CHECK).
