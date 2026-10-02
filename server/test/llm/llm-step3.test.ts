@@ -205,6 +205,16 @@ describe("STEP 3 omniroute client", () => {
     expect(direct.baseUrl).toBe("https://api.typesafe.ai");
   });
 
+  it("LLM-15 sse completion streams accumulate into one reply", async () => {
+    llm.enqueue({
+      rawBody:
+        'data: {"choices":[{"delta":{"content":"{\\"ok\\":"}}]}\n\ndata: {"choices":[{"delta":{"content":" true}"}}],"usage":{"prompt_tokens":10,"completion_tokens":3}}\n',
+    });
+    const result = await omniClient().json({ system: "s", user: "u", schema: Sample, tag: "t" });
+    expect(result.data).toEqual({ ok: true });
+    expect(result.usage).toEqual({ tokensIn: 10, tokensOut: 3 });
+  });
+
   it("LLM-14 semaphore caps parallel work", async () => {
     const sem = createSemaphore(2);
     let peak = 0;

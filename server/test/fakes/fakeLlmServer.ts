@@ -15,6 +15,8 @@ export interface QueuedLlmResponse {
   content?: unknown;
   /** Verbatim message content (fences, trailing text, garbage). */
   rawContent?: string;
+  /** Verbatim response body (SSE streams). Bypasses the chat envelope. */
+  rawBody?: string;
   usage?: { prompt_tokens: number; completion_tokens: number } | null;
   models?: string[];
 }
@@ -103,6 +105,11 @@ export class FakeLlmServer {
     }
     for (const [key, value] of Object.entries(next.headers ?? {})) res.setHeader(key, value);
     const status = next.status ?? 200;
+    if (next.rawBody !== undefined && (req.method ?? "") !== "GET") {
+      res.writeHead(status, { "content-type": "text/event-stream" });
+      res.end(next.rawBody);
+      return;
+    }
     if ((req.method ?? "") === "GET" && (req.url ?? "").endsWith("/models")) {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify({ data: (next.models ?? ["fake-model"]).map((id) => ({ id })) }));

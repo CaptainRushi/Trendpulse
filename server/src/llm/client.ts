@@ -334,7 +334,32 @@ export class LlmClient {
         retryAfterSeconds: retryAfterOf(response),
       });
     }
-    const envelope: unknown = await response.json();
+    const text = await response.text();
+    // Some gateways (OmniRoute auto mode) always stream SSE chunks, even
+    // without stream:true — accumulate delta.content instead of JSON.parse.
+    if (text.trimStart().startsWith("data:")) {
+      const streamed = parseSseCompletion(text);
+      if (streamed === undefined) {
+        return {
+          content: null,
+          usage: { tokensIn: 0, tokensOut: 0 },
+          httpStatus: response.status,
+          envelopeError: "stream had no content chunks",
+        };
+      }
+      return { content: streamed.content, usage: streamed.usage, httpStatus: response.status };
+    }
+    let envelope: unknown;
+    try {
+      envelope = JSON.parse(text) as unknown;
+    } catch {
+      return {
+        content: null,
+        usage: { tokensIn: 0, tokensOut: 0 },
+        httpStatus: response.status,
+        envelopeError: "chat response was not JSON",
+      };
+    }
     const parsed = z
       .object({
         choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).optional(),
@@ -433,6 +458,40 @@ function backoffDelay(baseMs: number, attempt: number, retryAfterSeconds: number
 
 function addUsage(a: LlmUsage, b: LlmUsage): LlmUsage {
   return { tokensIn: a.tokensIn + b.tokensIn, tokensOut: a.tokensOut + b.tokensOut };
+}
+
+/** Accumulate an SSE chat stream into one content string + usage. */
+function parseSseCompletion(text: string): { content: string | null; usage: LlmUsage } | undefined {
+  const chunkSchema = z.object({
+    choices: z.array(z.object({ delta: z.object({ content: z.string().optional() }).optional() })).optional(),
+    usage: z.object({ prompt_tokens: z.number().optional(), completion_tokens: z.number().optional() }).optional(),
+  });
+  let content = "";
+  let usage: LlmUsage = { tokensIn: 0, tokensOut: 0 };
+  let chunks = 0;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice("data:".length).trim();
+    if (payload === "" || payload === "[DONE]") continue;
+    let data: unknown;
+    try {
+      data = JSON.parse(payload) as unknown;
+    } catch {
+      return undefined;
+    }
+    const parsed = chunkSchema.safeParse(data);
+    if (!parsed.success) return undefined;
+    chunks += 1;
+    const delta = parsed.data.choices?.[0]?.delta?.content;
+    if (delta !== undefined) content += delta;
+    const usageData = parsed.data.usage;
+    if (usageData !== undefined) {
+      usage = { tokensIn: usageData.prompt_tokens ?? 0, tokensOut: usageData.completion_tokens ?? 0 };
+    }
+  }
+  if (chunks === 0) return undefined;
+  return { content: content === "" ? null : content, usage };
 }
 
 type ParseOutcome<T> = { ok: true; data: T } | { ok: false; error: string };

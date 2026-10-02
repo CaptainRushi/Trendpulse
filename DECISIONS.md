@@ -313,3 +313,9 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Observed extras (tolerated, not modeled):** resolved `"model": "jev-1.13.0"`, per-choice `probabilities` map, `usage: {input_tokens: 408, output_tokens: 59}` for a ~230-char state — real billing covers prompt+questions, so the chars/4 state-only estimate undercounts ~7x; budget stays approximate (fail-open side), revisit in Step 6 with real usage totals.
 - **Fixes:** default `JEV_MODEL` `jev` → `jev-latest` (old default 400s `Unknown model: jev`; also in `.env.example` + setup default + config test). `check-llm.ts` now loads repo-root `.env` explicitly — workspace scripts run with cwd=server/ so plain `dotenv.config()` never saw it (same latent gap in collect/run/setup/doctor; fixing those when touched).
 - **Storage:** key + base URL live in gitignored `.env` only (`JEV_BASE_URL=https://api.typesafe.ai`, split path off the user-given full endpoint so `{BASE}{PATH}` posts once).
+
+## 2026-10-02 — OmniRoute live (user-supplied key, auto model)
+
+- **Result:** Gateway serves `POST /v1/chat/completions` with `model: "auto"` (routed live to `claude-opus-5.5`). `.env` pins `OMNIROUTE_*_MODEL=auto` for extractor/writer/fallback.
+- **Fix:** Gateway always streams SSE chunks (`chat.completion.chunk` + `delta.content`), even without `stream:true` — `response.json()` choked on the `data:` framing. `LlmClient.postOnce` now accumulates `data:` deltas + final-chunk usage, with `LLM-15` pinning it (new Day-1 ID for the SSE-tolerant envelope; wiring deferred to check:plan).
+- **Notes:** machine env `OMNIROUTE_API_KEY` differs from `.env` and wins (dotenv never overrides) — remove the machine var or keep it deliberately. `GET /v1/models` hangs unanswered (gateway likely unimplemented); `/models`-based probes stay red, chat path green. FakeLlmServer gained `rawBody` passthrough for stream fixtures.
