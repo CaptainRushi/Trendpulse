@@ -17,8 +17,11 @@ import { loadConfig } from "../src/config/env.js";
 import { LlmClient } from "../src/llm/client.js";
 
 dotenv.config();
-
 const here = dirname(fileURLToPath(import.meta.url));
+// Workspace scripts run with cwd=server/, so the repo-root .env is not found
+// by default — load it explicitly (machine env still wins; dotenv never overrides).
+dotenv.config({ path: join(here, "..", "..", ".env") });
+
 const fixtureDir = join(here, "..", "test", "fixtures", "jev");
 
 const ChoiceAnswer = z.object({ type: z.literal("choice"), choice: z.string(), confidence: z.number() });

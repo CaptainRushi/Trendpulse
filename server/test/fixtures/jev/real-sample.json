@@ -1,0 +1,39 @@
+{
+  "request": {
+    "model": "jev-latest",
+    "state": {
+      "title": "Local bakery launches a sourdough subscription",
+      "snippet": "A neighborhood bakery now offers weekly sourdough delivery.",
+      "source": "rss",
+      "published_at": "2026-10-02T06:00:00Z"
+    },
+    "questions": {
+      "category": {
+        "type": "choice",
+        "instructions": "Which category best fits this item?",
+        "criteria": {
+          "Lifestyle": "food and daily life",
+          "Tech": "technology",
+          "none": "no category fits"
+        }
+      },
+      "quality": {
+        "type": "noul",
+        "instructions": "Is this substantive, not spam?"
+      }
+    }
+  },
+  "response": {
+    "answers": {
+      "category": {
+        "type": "choice",
+        "choice": "Lifestyle",
+        "confidence": 1
+      },
+      "quality": {
+        "type": "noul",
+        "noul": 0.83
+      }
+    }
+  }
+}

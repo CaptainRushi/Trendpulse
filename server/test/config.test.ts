@@ -9,7 +9,7 @@ describe("loadConfig", () => {
     expect(config.scheduleCron).toBe("0 6 * * *");
     expect(config.omnirouteBaseUrl).toBe("http://localhost:20128/v1");
     expect(config.jevBaseUrl).toBe("");
-    expect(config.jevModel).toBe("jev");
+    expect(config.jevModel).toBe("jev-latest");
     expect(config.sortBatchSize).toBe(30);
     expect(config.topN).toBe(50);
     expect(config.retentionMode).toBe("archive");

@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   values.set("JEV_BASE_URL", jevBase);
   const jevKey = (await askSecret("Jev API key", get("JEV_API_KEY", "") !== "")) ?? get("JEV_API_KEY", "");
   values.set("JEV_API_KEY", jevKey);
-  const jevModel = await ask("Jev model id", get("JEV_MODEL", "jev"));
+  const jevModel = await ask("Jev model id", get("JEV_MODEL", "jev-latest"));
   values.set("JEV_MODEL", jevModel);
   try {
     const probe = await testJevConnection({

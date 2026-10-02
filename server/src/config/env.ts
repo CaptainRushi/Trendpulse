@@ -57,7 +57,7 @@ const EnvSchema = z.object({
   JEV_BASE_URL: z.string().default(""),
   JEV_PATH: z.string().default("/v1/systemone"),
   JEV_API_KEY: z.string().default(""),
-  JEV_MODEL: z.string().default("jev"),
+  JEV_MODEL: z.string().default("jev-latest"),
   JEV_CONCURRENCY: numField(8).pipe(z.number().int().min(1).max(32)),
   JEV_PRICE_PER_M_INPUT: numField(0.04).pipe(z.number().nonnegative()),
   JEV_RUN_BUDGET_USD: numField(1.0).pipe(z.number().nonnegative()),

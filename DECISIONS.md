@@ -306,3 +306,10 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** New `test/llm/llm-step3.test.ts` (23 pass + JEV-03 skip: LLM-04…14 incl. semaphore unit for LLM-14, JEV-01/02/04…13).
 - **Reason:** IDs per rule 9; LLM-14 tests the shared semaphore primitive (OmniRoute caps stay caller-enforced per Phase-2 decision).
 - **Live result:** `check:llm` → OmniRoute key present in env but gateway unreachable (`fetch failed`); no Jev direct key → classification skipped, no fixture. Needs: running gateway + `JEV_API_KEY` (+ `JEV_BASE_URL` or explicit direct endpoint).
+
+## 2026-10-02 — Jev live verification (user-supplied key, FIX-2 path)
+
+- **Result:** Contract CONFIRMED. `jev-latest` → HTTP 200 `{answers: {category: {type: "choice", choice, confidence}, quality: {type: "noul", noul}}}` — exact CLAUDE.md shape. Fixture saved to `server/test/fixtures/jev/real-sample.json` (sanitized, JEV-03 green).
+- **Observed extras (tolerated, not modeled):** resolved `"model": "jev-1.13.0"`, per-choice `probabilities` map, `usage: {input_tokens: 408, output_tokens: 59}` for a ~230-char state — real billing covers prompt+questions, so the chars/4 state-only estimate undercounts ~7x; budget stays approximate (fail-open side), revisit in Step 6 with real usage totals.
+- **Fixes:** default `JEV_MODEL` `jev` → `jev-latest` (old default 400s `Unknown model: jev`; also in `.env.example` + setup default + config test). `check-llm.ts` now loads repo-root `.env` explicitly — workspace scripts run with cwd=server/ so plain `dotenv.config()` never saw it (same latent gap in collect/run/setup/doctor; fixing those when touched).
+- **Storage:** key + base URL live in gitignored `.env` only (`JEV_BASE_URL=https://api.typesafe.ai`, split path off the user-given full endpoint so `{BASE}{PATH}` posts once).
