@@ -339,3 +339,14 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** Factory/extractor call sites degrade (not throw) when the key exists but the model is unset.
 - **Reason:** Step-3's fail-fast factory broke `collect --source hackernews` (which needs no extractor). Missing key = degrade as before; key-without-model names the missing var per page. Factory itself still throws (LLM-13).
 - **Live matrix 2026-10-02:** HN ok (5 real), reddit blocked (403), trends ok (traffic numbers live), github ok (no token; stars/forks), wikipedia ok (all-access URL, Main_Page skipped), rss skipped (no feeds; hnrss.org/frontpage live 200, 15kB). Fixtures all match live shapes — no refresh needed (reddit stays constructed: live walled). Doctor all-green incl. omniroute 7794 models + jev sample answered.
+
+## 2026-10-02 — Step 5 normalize + dedupe (docs/12 Prompt 5, ponytail full)
+
+- **Decision:** No production-code changes — `normalize.ts`/`dedupe.ts`/`persist.ts` already implement all 7 tasks verbatim (canonicalize + sha1, sanitize 300/500, trigram ≥0.85 keep-best + `merged_sources`, seen-filter with post-sheet `markSeen`, percentile + position fallback, `items_run` pending set, `input − merged − seen = output` stats). Step 5 was audit + ID pins + live proof.
+- **Decision:** New `test/pipeline/nrm-step5.test.ts` (10 ID tests: NRM-01/02/03/04/05/06/07/08/10, W-05).
+- **Reason:** IDs per rule 9; NRM-09 (seen written only after sheet success) covered by persist-step tests + NRM-05 rerun.
+- **Decision:** Bare `ref=` stays kept (not stripped).
+- **Reason:** `url.test.ts` pins `?ref=home` kept ("stripped only by reddit's own rules"); changing it now would reshuffle `content_hash`es. Step-5's `ref` reads as the `ref_src`/`ref_url` family, which are stripped (NRM-01 pins that).
+- **Decision:** Float percentiles asserted with `toBeCloseTo`, not `toEqual`.
+- **Reason:** `1 − 1/3` is `...667` while `2/3` is `...666` — exact equality is representation luck, not contract.
+- **Live counts (real HN + hnrss.org, limit 10 each):** collected 20 → normalized 20 (0 dropped) → kept 15, merged 5 (frontpage overlap, expected) → scored 15.
