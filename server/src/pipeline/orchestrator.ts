@@ -411,7 +411,7 @@ export class Orchestrator {
         items: stat.items,
         duration_ms: stat.duration_ms,
       });
-      if (stat.status === "error") {
+      if (stat.status === "error" || stat.status === "blocked") {
         exec.partialReasons.push(`source ${stat.source}: ${stat.error ?? "unknown error"}`);
       }
     }
@@ -803,7 +803,7 @@ export class Orchestrator {
     });
     const llm: LlmExtractor =
       this.deps.extractor ??
-      (this.config.omnirouteApiKey
+      (this.config.omnirouteApiKey && this.config.omnirouteExtractModel
         ? createExtractor(
             createExtractorClient(this.config, {
               onCall: (record) => {
@@ -880,7 +880,7 @@ export class Orchestrator {
   private loadSourceStats(runId: string): SourceStats[] {
     const rows = this.db
       .prepare("SELECT source, status, items, duration_ms, error FROM run_source_stats WHERE run_id = ?")
-      .all(runId) as { source: SourceKey; status: "ok" | "error" | "skipped"; items: number; duration_ms: number; error: string | null }[];
+      .all(runId) as { source: SourceKey; status: "ok" | "error" | "blocked" | "skipped"; items: number; duration_ms: number; error: string | null }[];
     return rows.map((row) => ({
       source: row.source,
       status: row.status,

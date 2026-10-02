@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "./config/loadEnv.js";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config/env.js";
 import { applyMigrations, openDatabase } from "./db/sqlite.js";
@@ -11,7 +11,7 @@ import { recoverOnBoot } from "./scheduler/lock.js";
 import { createLogger, setRootLogger } from "./utils/logger.js";
 import { APP_VERSION } from "./version.js";
 
-dotenv.config();
+loadEnvFiles();
 
 const here = dirname(fileURLToPath(import.meta.url));
 

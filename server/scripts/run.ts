@@ -11,7 +11,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "../src/config/loadEnv.js";
 import pino from "pino";
 import { loadConfig } from "../src/config/env.js";
 import { applyMigrations, openDatabase } from "../src/db/sqlite.js";
@@ -22,7 +22,7 @@ import { LockBusyError } from "../src/scheduler/lock.js";
 import type { SourceKey } from "../src/sheets/schema.js";
 import { repoDbPath } from "./lib/dbPath.js";
 
-dotenv.config();
+loadEnvFiles();
 
 const USAGE =
   "usage:\n" +

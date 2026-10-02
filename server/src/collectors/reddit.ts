@@ -76,7 +76,11 @@ export const redditCollector: Collector = {
   },
   async collect(ctx): Promise<CollectResult> {
     const started = Date.now();
-    const finish = (items: RawItemDraft[], status: "ok" | "error" | "skipped", error: string | null = null): CollectResult => ({
+    const finish = (
+      items: RawItemDraft[],
+      status: "ok" | "error" | "blocked" | "skipped",
+      error: string | null = null,
+    ): CollectResult => ({
       items,
       stats: { source: "reddit", status, items: items.length, duration_ms: Date.now() - started, error },
     });
@@ -108,6 +112,9 @@ export const redditCollector: Collector = {
       const perSub = Math.max(1, Math.ceil(ctx.limit / subreddits.length));
       const items: RawItemDraft[] = [];
       const errors: string[] = [];
+      // 403/429 on every sub with zero items = access-walled, not broken.
+      let sawBlock = false;
+      let sawOther = false;
 
       for (const sub of subreddits) {
         if (items.length >= ctx.limit) break;
@@ -115,6 +122,8 @@ export const redditCollector: Collector = {
         const res = await ctx.http.get(url, { headers });
         if (res.status !== 200) {
           errors.push(`r/${sub}: HTTP ${String(res.status)}`);
+          if (res.status === 403 || res.status === 429) sawBlock = true;
+          else sawOther = true;
           continue;
         }
         try {
@@ -125,11 +134,15 @@ export const redditCollector: Collector = {
             items.push(redditPostToDraft(child.data));
           }
         } catch (error) {
+          sawOther = true;
           errors.push(`r/${sub}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
 
-      if (items.length === 0 && errors.length > 0) return finish([], "error", errors.join("; "));
+      if (items.length === 0 && errors.length > 0) {
+        if (sawBlock && !sawOther) return finish([], "blocked", errors.join("; "));
+        return finish([], "error", errors.join("; "));
+      }
       if (errors.length > 0) ctx.log.warn({ errors }, "reddit partial failure");
       return finish(items, "ok");
     } catch (error) {

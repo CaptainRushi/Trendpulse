@@ -1,18 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { testJevConnection, testOmnirouteConnection } from "../../src/llm/probe.js";
+import { FakeJevServer } from "../fakes/fakeJevServer.js";
 import { FakeLlmServer } from "../fakes/fakeLlmServer.js";
 
 let primary: FakeLlmServer;
 let fallback: FakeLlmServer;
+let jev: FakeJevServer;
 
 beforeEach(async () => {
   primary = await FakeLlmServer.start();
   fallback = await FakeLlmServer.start();
+  jev = await FakeJevServer.start("ok");
 });
 
 afterEach(async () => {
   await primary.stop();
   await fallback.stop();
+  await jev.stop();
 });
 
 describe("testOmnirouteConnection", () => {
@@ -47,15 +51,30 @@ describe("testOmnirouteConnection", () => {
 });
 
 describe("testJevConnection", () => {
-  it("completes a sample JSON round-trip on a direct endpoint", async () => {
+  it("classifies a sample against a direct SystemOne endpoint", async () => {
     const result = await testJevConnection({
-      baseUrl: primary.url,
+      baseUrl: jev.url,
+      path: "",
       apiKey: "k",
       model: "jev-1",
       timeoutMs: 5000,
     });
     expect(result).toMatchObject({ ok: true, model: "jev-1" });
-    expect(primary.seen).toHaveLength(1);
+    expect(jev.seen).toHaveLength(1);
+    const body = jev.seen[0]?.body as { model?: unknown; state?: unknown; questions?: unknown };
+    expect(body.model).toBe("jev-1");
+    expect(body.state).toBeTypeOf("object");
+    expect(body.questions).toBeTypeOf("object");
+  });
+
+  it("tolerates a pasted full endpoint URL", async () => {
+    const result = await testJevConnection({
+      baseUrl: `${jev.url}/v1/systemone`,
+      apiKey: "k",
+      model: "jev-1",
+      timeoutMs: 5000,
+    });
+    expect(result).toMatchObject({ ok: true, model: "jev-1" });
   });
 
   it("falls back to the OmniRoute base URL when JEV_BASE_URL is empty", async () => {
@@ -71,17 +90,16 @@ describe("testJevConnection", () => {
   });
 
   it("requires a model id", async () => {
-    const result = await testJevConnection({ baseUrl: primary.url, model: "" });
+    const result = await testJevConnection({ baseUrl: jev.url, model: "" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/model/i);
-    expect(primary.seen).toHaveLength(0);
+    expect(jev.seen).toHaveLength(0);
   });
 
   it("surfaces invalid sample replies as failures, not crashes", async () => {
-    primary.enqueue({ rawContent: "garbage" });
-    primary.enqueue({ rawContent: "still garbage" });
-    const result = await testJevConnection({ baseUrl: primary.url, model: "jev-1", timeoutMs: 5000 });
+    jev.enqueue({ rawBody: "garbage" });
+    const result = await testJevConnection({ baseUrl: jev.url, path: "", model: "jev-1", timeoutMs: 5000 });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/json/i);
+    if (!result.ok) expect(result.error).toMatch(/answers|envelope|json|HTTP/i);
   });
 });

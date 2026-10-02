@@ -11,16 +11,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "../src/config/loadEnv.js";
 import { z } from "zod";
 import { loadConfig } from "../src/config/env.js";
 import { LlmClient } from "../src/llm/client.js";
 
-dotenv.config();
+loadEnvFiles();
 const here = dirname(fileURLToPath(import.meta.url));
-// Workspace scripts run with cwd=server/, so the repo-root .env is not found
-// by default — load it explicitly (machine env still wins; dotenv never overrides).
-dotenv.config({ path: join(here, "..", "..", ".env") });
 
 const fixtureDir = join(here, "..", "test", "fixtures", "jev");
 

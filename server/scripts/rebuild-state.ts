@@ -7,7 +7,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "../src/config/loadEnv.js";
 import { loadConfig } from "../src/config/env.js";
 import { applyMigrations, openDatabase } from "../src/db/sqlite.js";
 import { applySeenRebuild, planSeenRebuild } from "../src/pipeline/rebuild.js";
@@ -15,7 +15,7 @@ import { SheetsRepo } from "../src/sheets/repo.js";
 import { createRealSheetsClient } from "../src/sheets/realClient.js";
 import { repoDbPath } from "./lib/dbPath.js";
 
-dotenv.config();
+loadEnvFiles();
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry-run");

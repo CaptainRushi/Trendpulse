@@ -173,6 +173,7 @@ async function main(): Promise<void> {
   try {
     const probe = await testJevConnection({
       baseUrl: jevBase,
+      path: get("JEV_PATH", "/v1/systemone"),
       apiKey: jevKey || undefined,
       model: jevModel,
       fallback: { baseUrl: omniBase, apiKey: omniKey },

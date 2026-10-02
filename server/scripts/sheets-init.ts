@@ -4,13 +4,13 @@
  * exactly what is missing and exits 1 (setup-friendly, no stack trace).
  */
 import { existsSync } from "node:fs";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "../src/config/loadEnv.js";
 import { loadConfig } from "../src/config/env.js";
 import { SheetsWriteQueue } from "../src/sheets/queue.js";
 import { createRealSheetsClient } from "../src/sheets/realClient.js";
 import { SheetsRepo } from "../src/sheets/repo.js";
 
-dotenv.config();
+loadEnvFiles();
 
 const config = loadConfig();
 const missing: string[] = [];

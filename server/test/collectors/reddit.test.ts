@@ -102,14 +102,14 @@ describe("redditCollector", () => {
     expect(items.length).toBe(12); // 6 valid posts × 2 subreddits
   });
 
-  it("returns an error stat when every subreddit is blocked", async () => {
+  it("returns a blocked stat when every subreddit is walled", async () => {
     const ctx = makeCtx({
       fetchImpl: () =>
         Promise.resolve(new Response("<html>blocked</html>", { status: 403 })),
       sleep: async () => undefined,
     });
     const { stats, items } = await redditCollector.collect(ctx);
-    expect(stats.status).toBe("error");
+    expect(stats.status).toBe("blocked");
     expect(items).toEqual([]);
     expect(stats.error).toContain("403");
   });

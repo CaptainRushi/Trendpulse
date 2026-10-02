@@ -319,3 +319,17 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Result:** Gateway serves `POST /v1/chat/completions` with `model: "auto"` (routed live to `claude-opus-5.5`). `.env` pins `OMNIROUTE_*_MODEL=auto` for extractor/writer/fallback.
 - **Fix:** Gateway always streams SSE chunks (`chat.completion.chunk` + `delta.content`), even without `stream:true` — `response.json()` choked on the `data:` framing. `LlmClient.postOnce` now accumulates `data:` deltas + final-chunk usage, with `LLM-15` pinning it (new Day-1 ID for the SSE-tolerant envelope; wiring deferred to check:plan).
 - **Notes:** machine env `OMNIROUTE_API_KEY` differs from `.env` and wins (dotenv never overrides) — remove the machine var or keep it deliberately. `GET /v1/models` hangs unanswered (gateway likely unimplemented); `/models`-based probes stay red, chat path green. FakeLlmServer gained `rawBody` passthrough for stream fixtures.
+
+## 2026-10-02 — Step 4 collectors (docs/12 Prompt 4, ponytail full)
+
+- **Decision:** New `blocked` source status (`SourceStats` enum): reddit 403/429 on every sub with zero items → `blocked` (not `error`); orchestrator counts blocked as a partial reason; `run_source_stats` needs no migration (TEXT, no CHECK).
+- **Reason:** Step-4 tasks 3–4 verbatim: walls aren't breakage, but a run with only blocked sources must read partial, not success.
+- **Decision:** New `test/collectors/col-step4.test.ts` (11 ID tests: COL-01…06/08/09/13/14, W-03). Reddit 403 test updated `error` → `blocked`.
+- **Reason:** IDs per rule 9; W-03 loops all six fixture-backed collectors + registry key coverage.
+- **Decision:** New `server/src/config/loadEnv.ts` (cwd `.env`, then repo-root `.env`; machine env wins); all entries (index, collect, run, doctor, rebuild-state, sheets-init, setup, check-llm) use it.
+- **Reason:** Workspace scripts run with cwd=server/, so root `.env` was invisible — live keys never reached the CLIs. Fixes Step-3's `check:llm` gap for every entry at once.
+- **Decision:** `testJevConnection` speaks SystemOne on direct endpoints (sample `quality` classify via `JevClient`), tolerates a pasted full `…/v1/systemone` URL, keeps the legacy chat round-trip for the empty-base fallback. probe/routes tests moved to FakeJevServer.
+- **Reason:** The old chat-JSON probe could never pass against SystemOne (doctor proved it: validation failure with a good key). `friendlyError` covers Jev error classes.
+- **Decision:** Factory/extractor call sites degrade (not throw) when the key exists but the model is unset.
+- **Reason:** Step-3's fail-fast factory broke `collect --source hackernews` (which needs no extractor). Missing key = degrade as before; key-without-model names the missing var per page. Factory itself still throws (LLM-13).
+- **Live matrix 2026-10-02:** HN ok (5 real), reddit blocked (403), trends ok (traffic numbers live), github ok (no token; stars/forks), wikipedia ok (all-access URL, Main_Page skipped), rss skipped (no feeds; hnrss.org/frontpage live 200, 15kB). Fixtures all match live shapes — no refresh needed (reddit stays constructed: live walled). Doctor all-green incl. omniroute 7794 models + jev sample answered.

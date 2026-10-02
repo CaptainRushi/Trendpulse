@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { LlmClient, LlmHttpError, LlmTimeoutError, LlmValidationError } from "./client.js";
+import { JevClient, JevHttpError, JevTimeoutError } from "./jev.js";
 
 export interface ProbeSuccess {
   ok: true;
@@ -59,24 +60,55 @@ export async function testOmnirouteConnection(options: ProbeOptions): Promise<Om
 
 export interface JevProbeOptions extends ProbeOptions {
   model: string;
+  /** SystemOne path (JEV_PATH). Wizard callers may omit it. */
+  path?: string | undefined;
   /** Used when baseUrl is empty (Jev rides OmniRoute). */
   fallback?: { baseUrl: string; apiKey: string } | undefined;
 }
 
-/** Tiny JSON round-trip — proves the Jev endpoint completes valid JSON. */
+/**
+ * One real SystemOne classification against a direct endpoint — proves the
+ * Jev contract, not just reachability. Empty baseUrl keeps the legacy chat
+ * round-trip through the OmniRoute fallback.
+ */
 export async function testJevConnection(options: JevProbeOptions): Promise<JevProbeResult> {
   const started = Date.now();
   if (options.model.trim() === "") {
     return { ok: false, latencyMs: 0, error: "Set a Jev model id first (e.g. the model or combo id in OmniRoute)." };
   }
-  const baseUrl = options.baseUrl.trim() === "" ? (options.fallback?.baseUrl ?? "") : options.baseUrl;
-  if (baseUrl.trim() === "") {
+  const baseUrl = options.baseUrl.trim();
+  if (baseUrl !== "") {
+    // Tolerate a pasted full endpoint (…/v1/systemone) as well as split BASE+PATH.
+    const path = options.path ?? "/v1/systemone";
+    const client = new JevClient({
+      baseUrl,
+      path: baseUrl.replace(/\/+$/, "").endsWith(path) ? "" : path,
+      apiKey: options.apiKey ?? "",
+      model: options.model,
+      timeoutMs: options.timeoutMs ?? 30000,
+      maxAttempts: 1,
+      fetchImpl: options.fetchImpl,
+    });
+    try {
+      await client.classify(
+        { title: "Probe item", snippet: "A connectivity check, not a real trend." },
+        {
+          quality: { type: "noul", instructions: "Is this substantive, not spam?" },
+        },
+        "test",
+      );
+      return { ok: true, model: options.model, latencyMs: Date.now() - started };
+    } catch (error) {
+      return { ok: false, latencyMs: Date.now() - started, error: friendlyError(baseUrl, error) };
+    }
+  }
+  const fallbackBase = options.fallback?.baseUrl ?? "";
+  if (fallbackBase.trim() === "") {
     return { ok: false, latencyMs: 0, error: "No Jev endpoint configured: set JEV_BASE_URL or the OmniRoute URL." };
   }
-  const apiKey = options.baseUrl.trim() === "" ? (options.fallback?.apiKey ?? "") : (options.apiKey ?? "");
   const client = new LlmClient({
-    baseUrl,
-    apiKey,
+    baseUrl: fallbackBase,
+    apiKey: options.fallback?.apiKey ?? "",
     model: options.model,
     clientName: "jev",
     timeoutMs: options.timeoutMs ?? 30000,
@@ -93,19 +125,19 @@ export async function testJevConnection(options: JevProbeOptions): Promise<JevPr
     });
     return { ok: true, model: options.model, latencyMs: Date.now() - started };
   } catch (error) {
-    return { ok: false, latencyMs: Date.now() - started, error: friendlyError(baseUrl, error) };
+    return { ok: false, latencyMs: Date.now() - started, error: friendlyError(fallbackBase, error) };
   }
 }
 
 /** Map client errors to the wizard's plain-words copy (UI §8). */
 export function friendlyError(baseUrl: string, error: unknown): string {
-  if (error instanceof LlmTimeoutError) {
+  if (error instanceof LlmTimeoutError || error instanceof JevTimeoutError) {
     return `Timed out reaching ${baseUrl}. Is the service running there?`;
   }
   if (error instanceof LlmValidationError) {
     return `The endpoint answered but not with valid JSON (${error.message}). Check that the URL points at an OpenAI-compatible chat endpoint and the model id is right.`;
   }
-  if (error instanceof LlmHttpError) {
+  if (error instanceof LlmHttpError || error instanceof JevHttpError) {
     if (error.status === 401 || error.status === 403) {
       return `Unauthorized (HTTP ${String(error.status)}) at ${baseUrl}. Check the API key.`;
     }

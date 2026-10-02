@@ -35,7 +35,8 @@ export type RawItemDraftInput = z.input<typeof RawItemDraft>;
 
 export const SourceStats = z.object({
   source: SourceKey,
-  status: z.enum(["ok", "error", "skipped"]),
+  /** blocked = access-walled (403/429), distinct from error: retrying is pointless. */
+  status: z.enum(["ok", "error", "blocked", "skipped"]),
   items: z.number().int().min(0),
   duration_ms: z.number().int().min(0),
   error: z.string().nullable().default(null),

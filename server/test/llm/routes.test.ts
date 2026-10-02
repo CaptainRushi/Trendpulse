@@ -3,18 +3,22 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { testContext } from "../api/helpers.js";
 import type { TestApi } from "../api/helpers.js";
+import { FakeJevServer } from "../fakes/fakeJevServer.js";
 import { FakeLlmServer } from "../fakes/fakeLlmServer.js";
 
 let gateway: FakeLlmServer;
+let jev: FakeJevServer;
 let t: TestApi;
 
 beforeEach(async () => {
   gateway = await FakeLlmServer.start();
+  jev = await FakeJevServer.start("ok");
   t = testContext();
 });
 
 afterEach(async () => {
   await gateway.stop();
+  await jev.stop();
   await t.close();
 });
 
@@ -80,17 +84,18 @@ describe("POST /api/setup/test-omniroute", () => {
 });
 
 describe("POST /api/setup/test-jev", () => {
-  it("runs the sample completion against a direct endpoint", async () => {
+  it("runs the sample classification against a direct endpoint", async () => {
     const app = await testApp();
     try {
       const res = await app.inject({
         method: "POST",
         url: "/api/setup/test-jev",
-        payload: { base_url: gateway.url, api_key: "k", model: "jev-1" },
+        payload: { base_url: jev.url, api_key: "k", model: "jev-1" },
       });
       expect(res.statusCode).toBe(200);
       const body = res.json<{ ok: boolean; model?: string }>();
       expect(body).toMatchObject({ ok: true, model: "jev-1" });
+      expect(jev.seen).toHaveLength(1);
     } finally {
       await app.close();
     }
@@ -133,7 +138,7 @@ describe("POST /api/setup/test-jev", () => {
       const res = await app.inject({
         method: "POST",
         url: "/api/setup/test-jev",
-        payload: { base_url: gateway.url, api_key: "super-secret-key", model: "jev-1" },
+        payload: { base_url: jev.url, api_key: "super-secret-key", model: "jev-1" },
       });
       expect(res.statusCode).toBe(200);
       expect(res.body).not.toContain("super-secret-key");

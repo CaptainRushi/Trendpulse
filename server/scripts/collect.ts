@@ -15,7 +15,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "../src/config/loadEnv.js";
 import { loadConfig } from "../src/config/env.js";
 import { applyMigrations, openDatabase, type StateDb } from "../src/db/sqlite.js";
 import { COLLECTORS, runCollectors } from "../src/collectors/registry.js";
@@ -25,7 +25,7 @@ import { ulid } from "../src/utils/ulid.js";
 import { buildCollectContext } from "./lib/context.js";
 import { repoDbPath } from "./lib/dbPath.js";
 
-dotenv.config();
+loadEnvFiles();
 
 const USAGE =
   "usage: npm run collect -- --source <key> [--source <key> ...] [--limit N]\n" +

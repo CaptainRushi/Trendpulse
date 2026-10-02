@@ -7,7 +7,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import dotenv from "dotenv";
+import { loadEnvFiles } from "../src/config/loadEnv.js";
 import { loadConfig, resolveJevEndpoint, type TrendPulseConfig } from "../src/config/env.js";
 import { applyMigrations, openDatabase, type StateDb } from "../src/db/sqlite.js";
 import { COLLECTORS, pingSource } from "../src/collectors/registry.js";
@@ -16,7 +16,7 @@ import { testJevConnection, testOmnirouteConnection } from "../src/llm/probe.js"
 import { createRealSheetsClient } from "../src/sheets/realClient.js";
 import { buildCollectContext } from "./lib/context.js";
 
-dotenv.config();
+loadEnvFiles();
 
 let failures = 0;
 
@@ -144,6 +144,7 @@ if (config !== undefined) {
     try {
       const probe = await testJevConnection({
         baseUrl: config.jevBaseUrl,
+        path: config.jevPath,
         apiKey: config.jevApiKey || undefined,
         model: config.jevModel,
         fallback: { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey },
