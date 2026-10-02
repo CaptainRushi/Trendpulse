@@ -28,7 +28,7 @@ interface MigrationFile {
   filename: string;
 }
 
-/** NNN_name.sql, ordered. Throws on gaps or duplicates (fail fast, never half-apply). */
+/** NNN_name.sql, numeric order. Gaps allowed (002 arrives later); duplicates throw. */
 export function listMigrations(dir: string = MIGRATIONS_DIR): MigrationFile[] {
   const files = readdirSync(dir)
     .filter((f) => /^\d+_.+\.sql$/.test(f))
@@ -38,13 +38,14 @@ export function listMigrations(dir: string = MIGRATIONS_DIR): MigrationFile[] {
     if (!match?.[1] || !match[2]) throw new Error(`Bad migration filename: ${filename}`);
     return { version: Number(match[1]), name: match[2], filename };
   });
-  migrations.forEach((m, i) => {
-    if (m.version !== i + 1) {
-      throw new Error(
-        `Migration version gap: expected ${String(i + 1)}, found ${String(m.version)} (${m.filename})`,
-      );
+  migrations.sort((a, b) => a.version - b.version);
+  const seen = new Set<number>();
+  for (const m of migrations) {
+    if (seen.has(m.version)) {
+      throw new Error(`Duplicate migration version ${String(m.version)} (${m.filename})`);
     }
-  });
+    seen.add(m.version);
+  }
   return migrations;
 }
 

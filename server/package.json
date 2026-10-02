@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src test scripts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "doctor": "tsx scripts/doctor.ts",
     "setup": "tsx scripts/setup.ts",
     "collect": "tsx scripts/collect.ts",

@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "workspaces": [
+    "shared",
     "server",
     "web"
   ],
@@ -19,12 +20,14 @@
     "test": "npm run test --workspace=server",
     "test:web": "npm run test --workspace=@trendpulse/web",
     "test:e2e": "npm run test:e2e --workspace=@trendpulse/web",
-    "lint": "npm run lint --workspace=server && npm run lint --workspace=web",
+    "lint": "npm run lint --workspace=server && npm run lint --workspace=web && npm run lint --workspace=@trendpulse/shared",
+    "typecheck": "npm run typecheck --workspace=@trendpulse/shared && npm run typecheck --workspace=server && npm run typecheck --workspace=@trendpulse/web",
     "doctor": "npm run doctor --workspace=server",
     "setup": "npm run setup --workspace=server",
     "collect": "npm run collect --workspace=server --",
     "pipeline": "npm run pipeline --workspace=server --",
-    "rebuild-state": "npm run rebuild-state --workspace=server"
+    "rebuild-state": "npm run rebuild-state --workspace=server",
+    "verify": "tsx scripts/verify.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.12.0",

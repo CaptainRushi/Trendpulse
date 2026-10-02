@@ -48,11 +48,21 @@ const EnvSchema = z.object({
   OMNIROUTE_BASE_URL: z.string().default("http://localhost:20128/v1"),
   OMNIROUTE_API_KEY: z.string().default(""),
   OMNIROUTE_EXTRACT_MODEL: z.string().default(""),
+  OMNIROUTE_WRITER_MODEL: z.string().default(""),
+  OMNIROUTE_FALLBACK_MODEL: z.string().default(""),
 
   // Empty = route Jev through OmniRoute (see resolveJevEndpoint).
+  // Day-1 default per docs/12 is https://api.typesafe.ai; empty stays
+  // supported for local-only setups without a direct Jev key.
   JEV_BASE_URL: z.string().default(""),
+  JEV_PATH: z.string().default("/v1/systemone"),
   JEV_API_KEY: z.string().default(""),
   JEV_MODEL: z.string().default("jev"),
+  JEV_CONCURRENCY: numField(8).pipe(z.number().int().min(1).max(32)),
+  JEV_PRICE_PER_M_INPUT: numField(0.04).pipe(z.number().nonnegative()),
+  JEV_RUN_BUDGET_USD: numField(1.0).pipe(z.number().nonnegative()),
+  JEV_FALLBACK: boolField(true),
+  QUALITY_MIN: numField(0.5).pipe(z.number().min(0).max(1)),
   LLM_CONCURRENCY: numField(2).pipe(z.number().int().min(1).max(16)),
   LLM_TIMEOUT_MS: numField(90000).pipe(z.number().int().min(1000)),
 
@@ -92,9 +102,17 @@ export interface TrendPulseConfig {
   omnirouteBaseUrl: string;
   omnirouteApiKey: string;
   omnirouteExtractModel: string;
+  omnirouteWriterModel: string;
+  omnirouteFallbackModel: string;
   jevBaseUrl: string;
+  jevPath: string;
   jevApiKey: string;
   jevModel: string;
+  jevConcurrency: number;
+  jevPricePerMInput: number;
+  jevRunBudgetUsd: number;
+  jevFallback: boolean;
+  qualityMin: number;
   llmConcurrency: number;
   llmTimeoutMs: number;
   trendsGeo: string;
@@ -152,9 +170,17 @@ export function loadConfig(env: RawEnv = process.env): TrendPulseConfig {
     omnirouteBaseUrl: e.OMNIROUTE_BASE_URL,
     omnirouteApiKey: e.OMNIROUTE_API_KEY,
     omnirouteExtractModel: e.OMNIROUTE_EXTRACT_MODEL,
+    omnirouteWriterModel: e.OMNIROUTE_WRITER_MODEL,
+    omnirouteFallbackModel: e.OMNIROUTE_FALLBACK_MODEL,
     jevBaseUrl: e.JEV_BASE_URL.trim(),
+    jevPath: e.JEV_PATH,
     jevApiKey: e.JEV_API_KEY,
     jevModel: e.JEV_MODEL,
+    jevConcurrency: e.JEV_CONCURRENCY,
+    jevPricePerMInput: e.JEV_PRICE_PER_M_INPUT,
+    jevRunBudgetUsd: e.JEV_RUN_BUDGET_USD,
+    jevFallback: e.JEV_FALLBACK,
+    qualityMin: e.QUALITY_MIN,
     llmConcurrency: e.LLM_CONCURRENCY,
     llmTimeoutMs: e.LLM_TIMEOUT_MS,
     trendsGeo: e.TRENDS_GEO,

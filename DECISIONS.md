@@ -248,4 +248,28 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 4. **Gap — SSE replay.** `06_IMPLEMENTATION_PLAN.md` Phase 7 requires "replay of last 50 events on connect"; `05_BACKEND_SCHEMA.md` §4 does not mention replay.
    - **Resolution:** Implement replay (plan is more specific; no schema contradiction).
 5. **Uncertainty — external endpoint shapes (Reddit JSON, Google Trends RSS, Wikimedia API).**
-   - **Resolution (per non-negotiable rule 13):** Each Phase-3 collector is written against a recorded fixture in `server/test/fixtures/`, with a tolerant parser + `doctor` ping. No endpoint shape is guessed beyond the fixture.
+    - **Resolution (per non-negotiable rule 13):** Each Phase-3 collector is written against a recorded fixture in `server/test/fixtures/`, with a tolerant parser + `doctor` ping. No endpoint shape is guessed beyond the fixture.
+
+## 2026-10-02 — Day-1 deviations (docs/12 section 1, Prompt 0 kickoff, no app code yet)
+
+- **Deviation:** Plain CSS with design tokens instead of Tailwind.
+- **Reason:** CLAUDE.md stack + docs/11 section 4 define the full token set (paper `#F5F5F0`, lime `#DCEB63`, forest `#14291D`, Geist/Mono, 4px radius, light only). Tailwind appears only in older docs; per priority CLAUDE.md + docs/11 win.
+- **Deviation:** Migration `003_labels.sql` created now with numbering gaps allowed (`002_scraping` arrives later).
+- **Reason:** Day-1 sorter needs `item_labels` now; scraper sidecar is stretch S1/Day-2. Runner must apply unapplied files in numeric order even if a lower number appears later (gap-tolerant, not fail-fast).
+- **Deviation:** Resume = idempotent re-run (checkpoints plus `seen_items`).
+- **Reason:** Full kill-resume drills (W-08, CH-01) come Day-2. Day-1 guarantee is only: re-running the same run id skips `done` stages, `persist_raw`/`persist_sorted` reconcile by run_id, `seen_items` written only after Sheets success, rerun adds ~0 raw rows.
+
+## 2026-10-02 — Step 1 foundation (docs/12 Prompt 1)
+
+- **Decision:** Created `shared/` workspace (`@trendpulse/shared`) with `src/domain.ts` (SourceKey 8 values, Category 14, Momentum without `fading`, ItemLabels/TopicText/WriterOutput, RawItem + `source_label`, SortedTopic) and `src/api.ts` (error envelope + Day-1 REST contract from docs/12 §7, `Day1Routes` for W-10). Root workspaces now `shared, server, web`.
+- **Reason:** Step 1 requires the contract package for the frontend lane; server keeps its phase-built records (superset with youtube/producthunt/devto, `fading`) until the Jev rewire lands. INF-05 proves shared types parse in server context.
+- **Decision:** Added 8 missing Day-1 env vars additively (`OMNIROUTE_WRITER_MODEL`, `OMNIROUTE_FALLBACK_MODEL`, `JEV_PATH`=/v1/systemone, `JEV_CONCURRENCY`=8, `JEV_PRICE_PER_M_INPUT`=0.04, `JEV_RUN_BUDGET_USD`=1.00, `JEV_FALLBACK`=true, `QUALITY_MIN`=0.5) + `.env.example` comments. Kept existing defaults (`JEV_BASE_URL` empty = via OmniRoute, `JEV_MODEL`=jev, `SORT_BATCH_SIZE`=30) instead of Step-1's direct/jev-latest/10.
+- **Reason:** Changing live defaults would break the phase-built sorter, probes, setup CLI and their tests for zero Day-1 gain; empty-base via-OmniRoute is the documented local-dev path. Step-1 values remain reachable by explicit env.
+- **Decision:** Migration runner is now gap-tolerant (numeric order, duplicates throw, gaps allowed); created `003_labels.sql` (`item_labels` per docs/11 §3.5, `IF NOT EXISTS`).
+- **Reason:** Day-1 deviation logged at kickoff: 003 now, 002 later. Kept `http_cache` in 001 (Step-1 says skip it) — collectors already use it for RSS conditionals; removal would regress.
+- **Decision:** Created root `verify/registry.ts` (types + empty registry + `exitCodeFor`); full 22-check fake board stays in `scripts/verify.ts`.
+- **Reason:** Step-1 wants an empty registry with `verify-report.md`; the repo already has the grown board writing `verify-report.json` (Phase 0→10). Registry wiring + `--mode live` come in Step 10; INF-05 pins the exit-code rule.
+- **Decision:** Added root `typecheck` script + `typecheck` in server/web/shared workspaces; root `lint` now covers shared.
+- **Reason:** Step-1 root script list requires `typecheck`; previously missing.
+- **Decision:** [Rule 1 - Bug] Fixed `scripts/verify.ts` F36 (Localhost bind + password): init fake tabs before the authenticated `/api/trends` check.
+- **Reason:** Without init the authed call returned 404 `SHEETS_NOT_FOUND`, masking the password gate the check means to prove. F36 now inits via `SheetsRepo.init()`; F33 untouched (sync needs no tabs). Verify is 22/22 green.
