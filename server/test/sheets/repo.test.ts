@@ -31,6 +31,7 @@ function rawRecord(id: string, runId = "run-1"): RawTrendRecord {
     content_hash: `hash-${id}`,
     merged_sources: [],
     extraction_model: null,
+    source_label: null,
   };
 }
 

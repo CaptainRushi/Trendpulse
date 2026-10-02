@@ -37,6 +37,7 @@ export const RAW_TRENDS_HEADERS: readonly string[] = [
   "content_hash",
   "merged_sources",
   "extraction_model",
+  "source_label",
 ];
 
 export const SORTED_TRENDS_HEADERS: readonly string[] = [
@@ -164,6 +165,8 @@ export const RawTrendRecord = z.object({
   content_hash: z.string(),
   merged_sources: z.array(z.string()),
   extraction_model: z.string().nullable(),
+  /** Human label for the source (feed name, subreddit). Null until collectors set it. */
+  source_label: z.string().nullable(),
 });
 export type RawTrendRecord = z.infer<typeof RawTrendRecord>;
 

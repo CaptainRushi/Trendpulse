@@ -123,10 +123,16 @@ function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
 const opt = (s: string | null): string => s ?? "";
 const req = (s: string): string => s;
 
-// ── raw_trends (18 cols) ─────────────────────────────────────────────────────
+/** Sheet text cap (docs/05 §1): truncate overlong cells, never throw. */
+const MAX_CELL = 2000;
+function capCells(row: string[]): string[] {
+  return row.map((c) => (c.length > MAX_CELL ? c.slice(0, MAX_CELL) : c));
+}
+
+// ── raw_trends (19 cols, S = source_label) ────────────────────────────────────
 
 export function rawRecordToRow(r: Raw): string[] {
-  return [
+  return capCells([
     req(r.id),
     req(r.run_id),
     req(r.collected_at),
@@ -145,7 +151,8 @@ export function rawRecordToRow(r: Raw): string[] {
     req(r.content_hash),
     JSON.stringify(r.merged_sources),
     opt(r.extraction_model),
-  ];
+    opt(r.source_label),
+  ]);
 }
 
 export function rowToRawRecord(cells: Cell[]): Raw {
@@ -170,6 +177,8 @@ export function rowToRawRecord(cells: Cell[]): Raw {
       content_hash: text(cellAt(cells, 15), "content_hash"),
       merged_sources: json(cellAt(cells, 16), "merged_sources", z.array(z.string()), []),
       extraction_model: nullableText(cellAt(cells, 17), "extraction_model"),
+      // Tolerant of pre-label 18-col rows: missing cell reads as null.
+      source_label: nullableText(cellAt(cells, 18), "source_label"),
     },
   );
 }
@@ -177,7 +186,7 @@ export function rowToRawRecord(cells: Cell[]): Raw {
 // ── sorted_trends (25 cols) ──────────────────────────────────────────────────
 
 export function sortedRecordToRow(r: Sorted): string[] {
-  return [
+  return capCells([
     req(r.topic_id),
     req(r.run_id),
     req(r.run_date),
@@ -203,7 +212,7 @@ export function sortedRecordToRow(r: Sorted): string[] {
     req(r.sorted_at),
     r.is_latest ? "TRUE" : "FALSE",
     r.hidden ? "TRUE" : "FALSE",
-  ];
+  ]);
 }
 
 export function rowToSortedRecord(cells: Cell[]): Sorted {
@@ -242,7 +251,7 @@ export function rowToSortedRecord(cells: Cell[]): Sorted {
 // ── daily_digest (11 cols) ───────────────────────────────────────────────────
 
 export function digestRecordToRow(r: Digest): string[] {
-  return [
+  return capCells([
     req(r.run_date),
     req(r.run_id),
     req(r.digest),
@@ -254,7 +263,7 @@ export function digestRecordToRow(r: Digest): string[] {
     JSON.stringify(r.top_categories),
     req(r.created_at),
     r.is_latest ? "TRUE" : "FALSE",
-  ];
+  ]);
 }
 
 export function rowToDigestRecord(cells: Cell[]): Digest {
@@ -284,7 +293,7 @@ export function rowToDigestRecord(cells: Cell[]): Digest {
 // ── runs_log (15 cols) ───────────────────────────────────────────────────────
 
 export function runLogRecordToRow(r: RunLog): string[] {
-  return [
+  return capCells([
     req(r.run_id),
     req(r.started_at),
     opt(r.finished_at),
@@ -300,7 +309,7 @@ export function runLogRecordToRow(r: RunLog): string[] {
     String(r.tokens_out),
     JSON.stringify(r.errors),
     req(r.app_version),
-  ];
+  ]);
 }
 
 export function rowToRunLogRecord(cells: Cell[]): RunLog {

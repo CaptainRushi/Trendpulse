@@ -36,6 +36,7 @@ const rawSample: Raw = {
   content_hash: "sha1abc",
   merged_sources: ["reddit"],
   extraction_model: null,
+  source_label: null,
 };
 
 const sortedSample: Sorted = {
@@ -69,7 +70,7 @@ const sortedSample: Sorted = {
 describe("mappers", () => {
   it("round-trips a raw record through a sheet row", () => {
     const row = rawRecordToRow(rawSample);
-    expect(row).toHaveLength(18);
+    expect(row).toHaveLength(19);
     expect(rowToRawRecord(row)).toEqual(rawSample);
   });
 

@@ -90,6 +90,7 @@ function toRecord(
     content_hash: item.content_hash,
     merged_sources: item.merged_sources,
     extraction_model: item.extraction_model,
+    source_label: null,
   });
 }
 

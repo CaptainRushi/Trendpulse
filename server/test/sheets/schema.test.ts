@@ -26,7 +26,7 @@ describe("tab definitions (single source of truth for columns)", () => {
     expect(RUNS_LOG_TAB).toBe("runs_log");
   });
 
-  it("raw_trends has the 18 spec columns in order", () => {
+  it("raw_trends has the 19 spec columns in order (S = source_label)", () => {
     expect([...RAW_TRENDS_HEADERS]).toEqual([
       "id",
       "run_id",
@@ -46,6 +46,7 @@ describe("tab definitions (single source of truth for columns)", () => {
       "content_hash",
       "merged_sources",
       "extraction_model",
+      "source_label",
     ]);
   });
 
@@ -127,6 +128,7 @@ describe("record schemas", () => {
       content_hash: "abc",
       merged_sources: [],
       extraction_model: null,
+      source_label: null,
     });
     expect(record.source).toBe("hackernews");
   });

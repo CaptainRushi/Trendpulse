@@ -63,6 +63,7 @@ export function makeRawItem(overrides: Partial<Raw> = {}): Raw {
     content_hash: `hash-${String(n)}`,
     merged_sources: [],
     extraction_model: null,
+    source_label: null,
     ...overrides,
   });
 }

@@ -273,3 +273,18 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Reason:** Step-1 root script list requires `typecheck`; previously missing.
 - **Decision:** [Rule 1 - Bug] Fixed `scripts/verify.ts` F36 (Localhost bind + password): init fake tabs before the authenticated `/api/trends` check.
 - **Reason:** Without init the authed call returned 404 `SHEETS_NOT_FOUND`, masking the password gate the check means to prove. F36 now inits via `SheetsRepo.init()`; F33 untouched (sync needs no tabs). Verify is 22/22 green.
+
+## 2026-10-02 — Step 2 sheets layer (docs/12 Prompt 2, ponytail ultra)
+
+- **Decision:** Added `source_label` col S: `RAW_TRENDS_HEADERS` 18→19, `RawTrendRecord.source_label` nullable, mappers write col 18 / read tolerant of legacy 18-col rows (missing→null). `persist.toRecord` + test literals set null.
+- **Reason:** Step-2 task 1 columns are exact (A..S, S = source_label); collectors fill labels later (Phase 3B recipe work). Tolerant read keeps old sheets parseable.
+- **Decision:** 2000-char cap via one `capCells` map over every `*RecordToRow` output (SHT-14).
+- **Reason:** Spec cap lives in one place, not per-field branches.
+- **Decision:** New `server/scripts/sheets-init.ts` + `sheets:init` script: prints SA email + tab list on success; names each missing piece (exit 1) without creds.
+- **Reason:** Step-2 task 8. No-creds run verified: reports `GOOGLE_SHEET_ID` + key path missing.
+- **Decision:** New `server/test/sheets/sht-step2.test.ts` (14 ID-titled tests: SHT-01/02/03/04/05/06/07/08/09/10/14/16, W-01/W-02). Existing descriptive suites untouched.
+- **Reason:** CLAUDE.md rule 9 IDs pin the Day-1 contract; history renames add churn, not coverage.
+- **Decision:** 403 hint stays generic (`Share the sheet with the service-account email as Editor`); concrete address surfaces in `sheets:init` output + `test-sheets` response.
+- **Reason:** `mapError` has no key-file access; threading the email through the error path ripples for zero operator gain. SHT-05 pins code + no-retry.
+- **Decision:** Plain `.nullable()` (not `.default(null)`) for `source_label`.
+- **Reason:** `.default()` + `exactOptionalPropertyTypes` broke `parseWith` inference; explicit null at 5 sites is dumber and green.
