@@ -3,6 +3,8 @@ import pino from "pino";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../../src/config/env.js";
 import type { StateDb } from "../../src/db/sqlite.js";
+import type { Classifier } from "../../src/llm/classifier.js";
+import { LlmClient } from "../../src/llm/client.js";
 import { Orchestrator } from "../../src/pipeline/orchestrator.js";
 import {
   acquirePipelineLock,
@@ -14,7 +16,6 @@ import { SheetsWriteQueue } from "../../src/sheets/queue.js";
 import type { SortedTrendRecord } from "../../src/sheets/schema.js";
 import { FakeSheetsClient } from "../fakes/fakeSheetsClient.js";
 import { insertRun, openTestDb } from "./helpers.js";
-import { StubJevClient } from "../sorting/helpers.js";
 
 const DAY = "2026-09-30";
 const config = loadConfig({});
@@ -52,65 +53,61 @@ function hnFetch(): typeof fetch {
   return impl;
 }
 
-interface JevHandlers {
-  onMap?: (callNo: number, user: string) => unknown;
+/** Deterministic sorter: fixed labels per item, one written card per cluster. */
+function stubSorter(throwOnClassify?: string): { classifier: Classifier; writerClient: LlmClient } {
+  const classifier: Classifier = {
+    modelId: "stub-jev",
+    classify: () => {
+      if (throwOnClassify !== undefined) return Promise.reject(new Error(throwOnClassify));
+      return Promise.resolve({
+        answers: {
+          category: { kind: "choice", choice: "Tech", confidence: 0.9, flags: [] },
+          quality: { kind: "noul", noul: 0.9, flags: [] },
+          novelty: { kind: "noul", noul: 0.5, flags: [] },
+          sentiment: { kind: "choice", choice: "neutral", confidence: 0.8, flags: [] },
+        },
+        classifier: "jev",
+        model: "stub-jev",
+      });
+    },
+  };
+  const fetchImpl = (async (_url: unknown, init?: { body?: unknown }): Promise<Response> => {
+    const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+    const user = body.messages[body.messages.length - 1]?.content ?? "";
+    const content =
+      user.startsWith("TOPICS:")
+        ? { digest: "One. Two. Three." }
+        : {
+            topics: [...user.matchAll(/<<<CLUSTER (\S+)>>>/g)].map((m) => ({
+              cluster_id: m[1],
+              title: `Group ${String(m[1])}`,
+              summary: "A group of stories.",
+              why_trending: "Grouped.",
+              tags: ["g"],
+              content_angles: ["One", "Two", "Three"],
+            })),
+          };
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(content) } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  const writerClient = new LlmClient({
+    baseUrl: "http://stub.invalid",
+    apiKey: "",
+    model: "stub-writer",
+    clientName: "extractor",
+    timeoutMs: 5000,
+    fetchImpl,
+  });
+  return { classifier, writerClient };
 }
 
-/** Deterministic Jev: map chunks ids in tens, reduce merges all, digest fixed. */
-function jevStub(handlers: JevHandlers = {}): StubJevClient {
-  let mapCalls = 0;
-  return new StubJevClient((tag, user) => {
-    if (tag === "jev_digest") return { digest: "One. Two. Three." };
-    if (tag === "jev_reduce") {
-      const ids: string[] = [];
-      for (const line of user.split("\n")) {
-        const match = /items: (\S+)/.exec(line);
-        if (match?.[1]) ids.push(...match[1].split(","));
-      }
-      return {
-        topics: [
-          {
-            title: "Everything today",
-            summary: "All stories merged.",
-            category: "Tech",
-            tags: ["day"],
-            relevance: 70,
-            novelty: 60,
-            momentum: "rising",
-            sentiment: "neutral",
-            why_trending: "Coverage.",
-            content_angles: ["Recap", "Details", "Outlook"],
-            item_ids: ids,
-          },
-        ],
-      };
-    }
-    mapCalls += 1;
-    if (handlers.onMap) return handlers.onMap(mapCalls, user);
-    const ids: string[] = [];
-    for (const line of user.split("\n")) {
-      const match = /^\[(.+?)\]/.exec(line);
-      if (match?.[1]) ids.push(match[1]);
-    }
-    const topics = [];
-    for (let i = 0; i < ids.length; i += 10) {
-      const group = ids.slice(i, i + 10);
-      topics.push({
-        title: `Batch group ${String(i / 10)}`,
-        summary: "A group of stories.",
-        category: "Tech",
-        tags: ["g"],
-        relevance: 60,
-        novelty: 50,
-        momentum: "rising",
-        sentiment: "neutral",
-        why_trending: "Grouped.",
-        content_angles: ["One", "Two", "Three"],
-        item_ids: group,
-      });
-    }
-    return { topics };
-  });
+function jevStub(): { classifier: Classifier; writerClient: LlmClient } {
+  return stubSorter();
 }
 
 function stageStatuses(db: StateDb, runId: string): Record<string, string> {
@@ -161,32 +158,32 @@ describe("orchestrator full run", () => {
         sheetsClient: client,
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: jevStub(),
+        ...jevStub(),
       });
       const summary = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
       expect(summary.status).toBe("success");
       expect(summary.itemsCollected).toBe(3);
       expect(summary.itemsNew).toBe(3);
-      expect(summary.topicsCount).toBe(1);
+      expect(summary.topicsCount).toBe(3);
 
       const statuses = stageStatuses(db, summary.runId);
       for (const stage of [
         "collect",
         "normalize",
         "dedupe",
-        "engagement_norm",
         "persist_raw",
-        "sort_map",
-        "sort_reduce",
+        "sort_classify",
+        "sort_cluster",
+        "sort_write",
         "score",
         "persist_sorted",
         "finalize",
       ]) {
         expect(statuses[stage]).toBe("done");
       }
-      // Sheet artifacts: 3 raw + header, 1 sorted + header, digest + runs_log.
+      // Sheet artifacts: 3 raw + header, 3 sorted + header, digest + runs_log.
       expect(client.rowCount("raw_trends")).toBe(4);
-      expect(client.rowCount("sorted_trends")).toBe(2);
+      expect(client.rowCount("sorted_trends")).toBe(4);
       expect(client.rowCount("daily_digest")).toBe(2);
       expect(client.rowCount("runs_log")).toBe(2);
       // items_run fully persisted; lock released.
@@ -213,7 +210,7 @@ describe("orchestrator full run", () => {
           sheetsClient: new FakeSheetsClient(),
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         await expect(
           orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] }),
@@ -227,8 +224,8 @@ describe("orchestrator full run", () => {
   });
 });
 
-describe("kill mid-sort_map and resume", () => {
-  it("resumes from sort_map with no duplicate raw rows and identical topics", async () => {
+describe("kill mid-sort_classify and resume", () => {
+  it("resumes from sort_classify with no duplicate raw rows and identical topics", async () => {
     const db = openTestDb();
     const seedBatchSize = (): void => {
       db.prepare("INSERT INTO settings (key, value_json) VALUES ('sort_batch_size', '2')").run();
@@ -236,11 +233,6 @@ describe("kill mid-sort_map and resume", () => {
     try {
       seedBatchSize();
       const client = new FakeSheetsClient();
-      const dyingJev = jevStub({
-        onMap: () => {
-          throw new Error("SIGKILL simulated");
-        },
-      });
       const dying = new Orchestrator({
         db,
         config,
@@ -248,10 +240,10 @@ describe("kill mid-sort_map and resume", () => {
         sheetsClient: client,
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: dyingJev,
+        ...stubSorter("SIGKILL simulated"),
       });
-      // 3 items / batchSize 2 → map dies on the first batch call (unexpected
-      // error propagates: stage and run stay `running`, lock is released).
+      // The classifier throws on the first item (unexpected error
+      // propagates: stage and run stay `running`, lock is released).
       await expect(
         dying.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] }),
       ).rejects.toThrow("SIGKILL simulated");
@@ -259,7 +251,7 @@ describe("kill mid-sort_map and resume", () => {
       const doomed = db.prepare("SELECT id FROM runs WHERE status = 'running'").all() as { id: string }[];
       expect(doomed).toHaveLength(1);
       const runId = doomed[0]?.id ?? "";
-      expect(stageStatuses(db, runId)["sort_map"]).toBe("running");
+      expect(stageStatuses(db, runId)["sort_classify"]).toBe("running");
       expect(stageStatuses(db, runId)["persist_raw"]).toBe("done");
 
       // Restart: boot recovery marks the dead run interrupted (as index.ts does).
@@ -274,14 +266,14 @@ describe("kill mid-sort_map and resume", () => {
         sheetsClient: client,
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: jevStub(),
+        ...jevStub(),
       });
       const resumed = await healthy.retryRun(runId);
       expect(resumed.status).toBe("success");
       expect(client.rowCount("raw_trends")).toBe(4); // header + 3, no duplicates
 
       // Same topics as an uninterrupted clean run over the same items
-      // (same batch size, so the reduce step applies to both).
+      // (same batch size, so the writer batches apply to both).
       const cleanDb = openTestDb();
       try {
         cleanDb.prepare("INSERT INTO settings (key, value_json) VALUES ('sort_batch_size', '2')").run();
@@ -293,7 +285,7 @@ describe("kill mid-sort_map and resume", () => {
           sheetsClient: cleanClient,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         const cleanSummary = await clean.startRun({
           trigger: "manual",
@@ -325,7 +317,7 @@ describe("missing credentials fail the run (never stuck running)", () => {
         log,
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: jevStub(),
+        ...jevStub(),
       });
       await expect(
         orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] }),
@@ -363,7 +355,7 @@ describe("retry from a failed stage", () => {  it("reuses done stages (collect r
         sheetsClient: client,
         sheetsQueue: fastQueue(),
         fetchImpl: countingFetch,
-        jevClient: jevStub(),
+        ...jevStub(),
       });
       await expect(
         orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] }),
@@ -394,13 +386,13 @@ describe("retry from a failed stage", () => {  it("reuses done stages (collect r
         sheetsClient: new FakeSheetsClient(),
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: jevStub(),
+        ...jevStub(),
       });
       const summary = await orch.startRun({
         trigger: "manual",
         runDate: DAY,
         sources: ["hackernews"],
-        stages: ["collect", "normalize", "dedupe", "engagement_norm", "persist_raw"],
+        stages: ["collect", "normalize", "dedupe", "persist_raw"],
       });
       expect(summary.status).toBe("success");
       db.prepare("UPDATE runs SET status = 'failed' WHERE id = ?").run(summary.runId);
@@ -423,7 +415,7 @@ describe("resortRun", () => {
         sheetsClient: client,
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: jevStub(),
+        ...jevStub(),
       };
       const orch = new Orchestrator(base);
       const first = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
@@ -438,9 +430,9 @@ describe("resortRun", () => {
         stableTopics(scoreDetail(db, first.runId), urls),
       );
       // Two sets in the sheet; exactly the new set is latest.
-      expect(client.rowCount("sorted_trends")).toBe(3); // header + 2 sets
+      expect(client.rowCount("sorted_trends")).toBe(7); // header + 3 + 3
       const flags = (client.tabs.get("sorted_trends") ?? []).slice(1).map((row) => row[23]);
-      expect(flags).toEqual(["FALSE", "TRUE"]);
+      expect(flags).toEqual(["FALSE", "FALSE", "FALSE", "TRUE", "TRUE", "TRUE"]);
     } finally {
       db.close();
     }
@@ -456,7 +448,7 @@ describe("resortRun", () => {
         sheetsClient: new FakeSheetsClient(),
         sheetsQueue: fastQueue(),
         fetchImpl: hnFetch(),
-        jevClient: jevStub(),
+        ...jevStub(),
       });
       await expect(orch.resortRun("2026-01-01")).rejects.toThrow(/no persisted items/);
     } finally {

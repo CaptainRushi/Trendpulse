@@ -11,7 +11,9 @@ import { SheetsRepo } from "../sheets/repo.js";
 import { createRealSheetsClient } from "../sheets/realClient.js";
 import { SheetsApiError } from "../sheets/client.js";
 import type { LlmExtractor } from "../llm/extract.js";
-import type { JevJsonClient } from "../sorting/map.js";
+import type { Classifier } from "../llm/classifier.js";
+import type { JevClient } from "../llm/jev.js";
+import type { LlmClient } from "../llm/client.js";
 import { Orchestrator } from "../pipeline/orchestrator.js";
 import { pipelineBus } from "../pipeline/events.js";
 import type { EventBus } from "../pipeline/events.js";
@@ -25,7 +27,10 @@ export interface AppContext {
   events?: EventBus;
   sheetsClient?: SheetsClient;
   fetchImpl?: typeof fetch;
-  jevClient?: JevJsonClient;
+  classifier?: Classifier;
+  fallbackClassifier?: Classifier;
+  pairJevClient?: JevClient;
+  writerClient?: LlmClient;
   extractor?: LlmExtractor;
   /** Live scheduler (hot-restarted on schedule_cron/timezone PUT). */
   scheduler?: PipelineScheduler;
@@ -70,7 +75,10 @@ export function appOrchestrator(ctx: AppContext): Orchestrator {
     events: appEvents(ctx),
     ...(ctx.sheetsClient ? { sheetsClient: ctx.sheetsClient } : {}),
     ...(ctx.fetchImpl ? { fetchImpl: ctx.fetchImpl } : {}),
-    ...(ctx.jevClient ? { jevClient: ctx.jevClient } : {}),
+    ...(ctx.classifier ? { classifier: ctx.classifier } : {}),
+    ...(ctx.fallbackClassifier ? { fallbackClassifier: ctx.fallbackClassifier } : {}),
+    ...(ctx.pairJevClient ? { pairJevClient: ctx.pairJevClient } : {}),
+    ...(ctx.writerClient ? { writerClient: ctx.writerClient } : {}),
     ...(ctx.extractor ? { extractor: ctx.extractor } : {}),
   });
 }

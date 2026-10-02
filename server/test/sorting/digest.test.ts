@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LlmValidationError } from "../../src/llm/client.js";
+import type { JsonRequest, JsonResult } from "../../src/llm/client.js";
 import {
   countSentences,
   DIGEST_MAX_SENTENCES,
@@ -8,7 +9,25 @@ import {
   formatDigestInput,
   generateDigest,
 } from "../../src/sorting/digest.js";
-import { StubJevClient } from "./helpers.js";
+
+/** In-process digest double honoring the DigestClient surface. */
+class StubDigestClient {
+  readonly modelId = "stub-jev";
+  readonly calls: { tag: string; user: string }[] = [];
+
+  constructor(private readonly handler: (tag: string, user: string) => unknown) {}
+
+  async json<T>(request: JsonRequest<T>): Promise<JsonResult<T>> {
+    this.calls.push({ tag: request.tag, user: request.user });
+    const parsed = request.schema.safeParse(this.handler(request.tag, request.user));
+    if (!parsed.success) throw new LlmValidationError("stub: invalid digest shape");
+    return { data: parsed.data, usage: { tokensIn: 0, tokensOut: 0 }, model: this.modelId, latencyMs: 0, repaired: false };
+  }
+
+  callsTo(tag: string): { tag: string; user: string }[] {
+    return this.calls.filter((call) => call.tag === tag);
+  }
+}
 
 function topics(n: number): { title: string; summary: string }[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -33,7 +52,7 @@ describe("countSentences", () => {
 
 describe("generateDigest", () => {
   it("sends at most the top 10 topics and accepts 3–5 sentences", async () => {
-    const client = new StubJevClient((_tag, user) => {
+    const client = new StubDigestClient((_tag, user) => {
       expect(user).toContain("Topic 0");
       expect(user).toContain("Topic 9");
       expect(user).not.toContain("Topic 10");
@@ -48,7 +67,7 @@ describe("generateDigest", () => {
 
   it("repairs a sentence-count violation once with an explicit rewrite", async () => {
     let calls = 0;
-    const client = new StubJevClient((_tag, user) => {
+    const client = new StubDigestClient((_tag, user) => {
       calls += 1;
       if (calls === 1) {
         expect(user).toContain("TOPICS:");
@@ -64,7 +83,7 @@ describe("generateDigest", () => {
   });
 
   it("throws LlmValidationError when the rewrite still violates the range", async () => {
-    const client = new StubJevClient(() => ({ digest: "One. Two." }));
+    const client = new StubDigestClient(() => ({ digest: "One. Two." }));
     await expect(generateDigest(client, topics(3))).rejects.toBeInstanceOf(LlmValidationError);
   });
 

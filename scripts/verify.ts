@@ -7,6 +7,8 @@ import { writeFileSync } from "node:fs";
 import pino from "pino";
 import { loadConfig } from "../server/src/config/env.js";
 import { buildApp } from "../server/src/app.js";
+import type { Classifier } from "../server/src/llm/classifier.js";
+import { LlmClient } from "../server/src/llm/client.js";
 import { FakeSheetsClient } from "../server/test/fakes/fakeSheetsClient.js";
 import { openTestDb } from "../server/test/pipeline/helpers.js";
 import { EventBus } from "../server/src/pipeline/events.js";
@@ -14,7 +16,6 @@ import { Orchestrator } from "../server/src/pipeline/orchestrator.js";
 import { SheetsWriteQueue } from "../server/src/sheets/queue.js";
 import { SheetsRepo } from "../server/src/sheets/repo.js";
 import { acquirePipelineLock, releasePipelineLock, recoverOnBoot } from "../server/src/scheduler/lock.js";
-import { StubJevClient } from "../server/test/sorting/helpers.js";
 
 interface Check {
   id: string;
@@ -53,56 +54,59 @@ function hnFetch(): typeof fetch {
   };
 }
 
-function jevStub(): StubJevClient {
-  return new StubJevClient((tag, user) => {
-    if (tag === "jev_digest") return { digest: "One. Two. Three." };
-    if (tag === "jev_reduce") {
-      const ids: string[] = [];
-      for (const line of user.split("\n")) {
-        const match = /items: (\S+)/.exec(line);
-        if (match?.[1]) ids.push(...match[1].split(","));
-      }
-      return {
-        topics: [
-          {
-            title: "Everything today",
-            summary: "All stories merged.",
-            category: "Tech",
-            tags: ["day"],
-            relevance: 70,
-            novelty: 60,
-            momentum: "rising",
-            sentiment: "neutral",
-            why_trending: "Coverage.",
-            content_angles: ["Recap", "Details", "Outlook"],
-            item_ids: ids,
-          },
-        ],
-      };
-    }
-    const ids: string[] = [];
-    for (const line of user.split("\n")) {
-      const match = /^\[(.+?)\]/.exec(line);
-      if (match?.[1]) ids.push(match[1]);
-    }
-    return {
-      topics: [
-        {
-          title: "Batch group 0",
-          summary: "A group of stories.",
-          category: "Tech",
-          tags: ["g"],
-          relevance: 60,
-          novelty: 50,
-          momentum: "rising",
-          sentiment: "neutral",
-          why_trending: "Grouped.",
-          content_angles: ["One", "Two", "Three"],
-          item_ids: ids,
+/** Deterministic sorter: fixed labels per item, one written card per cluster. */
+function stubSorter(): { classifier: Classifier; writerClient: LlmClient } {
+  const classifier: Classifier = {
+    modelId: "stub-jev",
+    classify: () =>
+      Promise.resolve({
+        answers: {
+          category: { kind: "choice", choice: "Tech", confidence: 0.9, flags: [] },
+          quality: { kind: "noul", noul: 0.9, flags: [] },
+          novelty: { kind: "noul", noul: 0.5, flags: [] },
+          sentiment: { kind: "choice", choice: "neutral", confidence: 0.8, flags: [] },
         },
-      ],
-    };
+        classifier: "jev",
+        model: "stub-jev",
+      }),
+  };
+  const fetchImpl = (async (_url: unknown, init?: { body?: unknown }): Promise<Response> => {
+    const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+    const user = body.messages[body.messages.length - 1]?.content ?? "";
+    const content =
+      user.startsWith("TOPICS:")
+        ? { digest: "One. Two. Three." }
+        : {
+            topics: [...user.matchAll(/<<<CLUSTER (\S+)>>>/g)].map((m) => ({
+              cluster_id: m[1],
+              title: `Group ${String(m[1])}`,
+              summary: "A group of stories.",
+              why_trending: "Grouped.",
+              tags: ["g"],
+              content_angles: ["One", "Two", "Three"],
+            })),
+          };
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(content) } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  const writerClient = new LlmClient({
+    baseUrl: "http://stub.invalid",
+    apiKey: "",
+    model: "stub-writer",
+    clientName: "extractor",
+    timeoutMs: 5000,
+    fetchImpl,
   });
+  return { classifier, writerClient };
+}
+
+function jevStub(): { classifier: Classifier; writerClient: LlmClient } {
+  return stubSorter();
 }
 
 const DAY = "2026-09-30";
@@ -136,7 +140,7 @@ const checks: Check[] = [
           sheetsClient: new FakeSheetsClient(),
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         const summary = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         if (summary.itemsCollected < 3) throw new Error(`Expected ≥3 items, got ${summary.itemsCollected}`);
@@ -164,7 +168,7 @@ const checks: Check[] = [
           sheetsClient: new FakeSheetsClient(),
           sheetsQueue: fastQueue(),
           fetchImpl: badFetch,
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         try {
           await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
@@ -197,7 +201,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         const before = sheets.rowCount("raw_trends");
@@ -224,7 +228,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         const summary = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         const rows = sheets.rowCount("raw_trends");
@@ -251,7 +255,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         const summary = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         if (summary.topicsCount < 1) throw new Error(`Expected ≥1 topics, got ${summary.topicsCount}`);
@@ -277,7 +281,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         const rows = sheets.tabs.get("sorted_trends") ?? [];
@@ -304,7 +308,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         const digest = sheets.rowCount("daily_digest");
@@ -329,7 +333,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         await orch.resortRun(DAY);
@@ -360,7 +364,7 @@ const checks: Check[] = [
           sheetsClient: new FakeSheetsClient(),
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         try {
           await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
@@ -393,7 +397,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         const summary = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         // ponytail: simulate crash by leaving status as 'running'
@@ -422,7 +426,7 @@ const checks: Check[] = [
           sheetsClient: sheets,
           sheetsQueue: fastQueue(),
           fetchImpl: hnFetch(),
-          jevClient: jevStub(),
+          ...jevStub(),
         });
         await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
         const resorted = await orch.resortRun(DAY);

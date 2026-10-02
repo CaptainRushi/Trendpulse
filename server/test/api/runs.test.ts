@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { acquirePipelineLock, releasePipelineLock } from "../../src/scheduler/lock.js";
+import type { Classifier } from "../../src/llm/classifier.js";
+import { LlmClient } from "../../src/llm/client.js";
 import { insertRun } from "../pipeline/helpers.js";
-import { StubJevClient } from "../sorting/helpers.js";
 import { testContext } from "./helpers.js";
 import type { TestApi } from "./helpers.js";
 
@@ -32,60 +33,58 @@ function hnFetch(): typeof fetch {
   return impl;
 }
 
-function jevStub(): StubJevClient {
-  return new StubJevClient((tag, user) => {
-    if (tag === "jev_digest") return { digest: "One. Two. Three." };
-    if (tag === "jev_reduce") {
-      const ids: string[] = [];
-      for (const line of user.split("\n")) {
-        const match = /items: (\S+)/.exec(line);
-        if (match?.[1]) ids.push(...match[1].split(","));
-      }
-      return {
-        topics: [
-          {
-            title: "Merged",
-            summary: "Merged summary.",
-            category: "Tech",
-            tags: ["m"],
-            relevance: 70,
-            novelty: 60,
-            momentum: "rising",
-            sentiment: "neutral",
-            why_trending: "Coverage.",
-            content_angles: ["A", "B", "C"],
-            item_ids: ids,
-          },
-        ],
-      };
-    }
-    const ids: string[] = [];
-    for (const line of user.split("\n")) {
-      const match = /^\[(.+?)\]/.exec(line);
-      if (match?.[1]) ids.push(match[1]);
-    }
-    return {
-      topics: [
-        {
-          title: "Mapped",
-          summary: "Mapped summary.",
-          category: "Tech",
-          tags: ["m"],
-          relevance: 70,
-          novelty: 60,
-          momentum: "rising",
-          sentiment: "neutral",
-          why_trending: "Coverage.",
-          content_angles: ["A", "B", "C"],
-          item_ids: ids,
+function sorterStubs(): { classifier: Classifier; writerClient: LlmClient } {
+  const classifier: Classifier = {
+    modelId: "stub-jev",
+    classify: () =>
+      Promise.resolve({
+        answers: {
+          category: { kind: "choice", choice: "Tech", confidence: 0.9, flags: [] },
+          quality: { kind: "noul", noul: 0.9, flags: [] },
+          novelty: { kind: "noul", noul: 0.5, flags: [] },
+          sentiment: { kind: "choice", choice: "neutral", confidence: 0.8, flags: [] },
         },
-      ],
-    };
+        classifier: "jev",
+        model: "stub-jev",
+      }),
+  };
+  const fetchImpl = (async (_url: unknown, init?: { body?: unknown }): Promise<Response> => {
+    const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
+    const user = body.messages[body.messages.length - 1]?.content ?? "";
+    const content =
+      user.startsWith("TOPICS:")
+        ? { digest: "One. Two. Three." }
+        : {
+            topics: [...user.matchAll(/<<<CLUSTER (\S+)>>>/g)].map((m) => ({
+              cluster_id: m[1],
+              title: `Group ${String(m[1])}`,
+              summary: "A group of stories.",
+              why_trending: "Grouped.",
+              tags: ["g"],
+              content_angles: ["One", "Two", "Three"],
+            })),
+          };
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(content) } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  const writerClient = new LlmClient({
+    baseUrl: "http://stub.invalid",
+    apiKey: "",
+    model: "stub-writer",
+    clientName: "extractor",
+    timeoutMs: 5000,
+    fetchImpl,
   });
+  return { classifier, writerClient };
 }
 
 function runnable(t: TestApi): TestApi["ctx"] {
-  return { ...t.ctx, fetchImpl: hnFetch(), jevClient: jevStub() };
+  return { ...t.ctx, fetchImpl: hnFetch(), ...sorterStubs() };
 }
 
 async function waitForStatus(

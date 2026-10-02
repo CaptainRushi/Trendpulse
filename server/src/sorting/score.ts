@@ -16,10 +16,27 @@
  * are assigned after ordering so they can't perturb the rank.
  */
 import { PROMPT_VERSION } from "../llm/prompts/jev.js";
+import { z } from "zod";
+import { Category, Momentum, Sentiment } from "../sheets/schema.js";
 import { SortedTrendRecord } from "../sheets/schema.js";
 import type { RawTrendRecord, SortedTrendRecord as SortedRecord } from "../sheets/schema.js";
 import { ulid } from "../utils/ulid.js";
-import type { JevTopic } from "./map.js";
+
+/** Scored-topic input (was JevTopic from the retired map step): writer text + code aggregation. */
+export const JevTopicSchema = z.object({
+  title: z.string().max(140),
+  summary: z.string().max(280),
+  category: Category,
+  tags: z.array(z.string()).max(6),
+  relevance: z.number().int().min(0).max(100),
+  novelty: z.number().int().min(0).max(100),
+  momentum: Momentum,
+  sentiment: Sentiment,
+  why_trending: z.string().max(200),
+  content_angles: z.array(z.string()).length(3),
+  item_ids: z.array(z.string()).min(1),
+});
+export type JevTopic = z.infer<typeof JevTopicSchema>;
 
 export interface ScoreWeights {
   engagement: number;

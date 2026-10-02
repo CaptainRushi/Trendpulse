@@ -8,8 +8,14 @@
  */
 import { z } from "zod";
 import { LlmValidationError } from "../llm/client.js";
+import type { JsonRequest, JsonResult } from "../llm/client.js";
 import { JEV_DIGEST_SYSTEM } from "../llm/prompts/jev.js";
-import type { JevJsonClient } from "./map.js";
+
+/** Minimal surface digest needs — any JSON chat client satisfies this. */
+export interface DigestClient {
+  readonly modelId: string;
+  json<T>(request: JsonRequest<T>): Promise<JsonResult<T>>;
+}
 
 /** Digest covers at most this many top-ranked topics (Step-6 task 8). */
 export const DIGEST_TOPIC_LIMIT = 10;
@@ -43,7 +49,7 @@ export interface DigestResult {
 }
 
 export async function generateDigest(
-  client: JevJsonClient,
+  client: DigestClient,
   topics: { title: string; summary: string }[],
 ): Promise<DigestResult> {
   const first = await client.json({

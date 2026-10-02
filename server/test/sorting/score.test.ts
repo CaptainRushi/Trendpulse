@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { scoreTopics } from "../../src/sorting/score.js";
 import { DEFAULT_SCORE_WEIGHTS } from "../../src/sorting/score.js";
-import type { JevTopic } from "../../src/sorting/map.js";
+import type { JevTopic } from "../../src/sorting/score.js";
 import type { RawTrendRecord } from "../../src/sheets/schema.js";
 import { makeRawItem } from "./helpers.js";
 

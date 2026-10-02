@@ -13,19 +13,65 @@ import type { JevClient } from "../llm/jev.js";
 import { JevBudgetExceeded } from "../llm/jev.js";
 import type { SheetsRepo } from "../sheets/repo.js";
 import type { RawTrendRecord, SortedTrendRecord } from "../sheets/schema.js";
-import type { JevTopic } from "./map.js";
+import type { JevTopic } from "./score.js";
 import { aggregateClusters } from "./aggregate.js";
-import type { AggregateItem } from "./aggregate.js";
+import type { AggregateItem, AggregatedCluster } from "./aggregate.js";
 import { classifyItems } from "./classifyLabels.js";
 import type { ClassifiableItem } from "./classifyLabels.js";
 import { clusterItems } from "./clusterTopics.js";
 import type { SameStoryCheck } from "./clusterTopics.js";
 import { generateDigest } from "./digest.js";
+import { writeTopics, fallbackTopic } from "./writeTopics.js";
+import type { WrittenTopic } from "./writeTopics.js";
 import { DEFAULT_SCORE_WEIGHTS, scoreTopics } from "./score.js";
 import type { ScoreWeights } from "./score.js";
-import { writeTopics } from "./writeTopics.js";
-import type { WrittenTopic } from "./writeTopics.js";
-import { fallbackTopic } from "./writeTopics.js";
+/** Cluster cards for the writer: top-norm member first, five items max (shared with the orchestrator). */
+export function toWriterInputs(
+  aggregated: AggregatedCluster[],
+  byId: Map<string, RawTrendRecord>,
+): { clusterId: string; items: { source: string; title: string; snippet: string }[]; topTitle: string; topSnippet: string; sourceCount: number }[] {
+  return aggregated.map((cluster) => {
+    const members = cluster.itemIds
+      .map((id) => byId.get(id))
+      .filter((item): item is RawTrendRecord => item !== undefined)
+      .sort((a, b) => b.engagement_norm - a.engagement_norm);
+    const top = members[0];
+    return {
+      clusterId: cluster.clusterId,
+      items: members.map((m) => ({ source: m.source, title: m.title, snippet: m.snippet })),
+      topTitle: top?.title ?? "Untitled topic",
+      topSnippet: top?.snippet ?? "",
+      sourceCount: cluster.sourceCount,
+    };
+  });
+}
+/** Writer cards + code aggregation → scoreTopics input (shared with the orchestrator). */
+export function toJevTopics(
+  aggregated: AggregatedCluster[],
+  written: WrittenTopic[],
+): JevTopic[] {
+  const aggregatedById = new Map(aggregated.map((a) => [a.clusterId, a]));
+  return written.map((w) => {
+    const agg = aggregatedById.get(w.text.cluster_id);
+    // Aggregate votes only produce valid Category/Sentiment members
+    // ("none" folds to Other/neutral at classification time).
+    const category = (agg?.category ?? "Other") as JevTopic["category"];
+    const sentiment = (agg?.sentiment ?? "neutral") as JevTopic["sentiment"];
+    return {
+      title: w.text.title,
+      summary: w.text.summary,
+      category,
+      tags: w.text.tags,
+      relevance: Math.round((agg?.relevance ?? 0) * 100),
+      novelty: Math.round((agg?.novelty ?? 0) * 100),
+      momentum: agg?.momentum ?? "steady",
+      sentiment,
+      why_trending: w.text.why_trending,
+      content_angles: w.text.content_angles,
+      item_ids: agg?.itemIds ?? [],
+    };
+  });
+}
 
 export const SORT_PROMPT_VERSION = "w1";
 
@@ -197,20 +243,7 @@ export async function runSorter(options: SortRunOptions, items: RawTrendRecord[]
   const aggregated = aggregateClusters(clusters, aggregateById);
 
   // 6. write (OmniRoute batches).
-  const writerInputs = aggregated.map((cluster) => {
-    const members = cluster.itemIds
-      .map((id) => byId.get(id))
-      .filter((item): item is RawTrendRecord => item !== undefined)
-      .sort((a, b) => b.engagement_norm - a.engagement_norm);
-    const top = members[0];
-    return {
-      clusterId: cluster.clusterId,
-      items: members.map((m) => ({ source: m.source, title: m.title, snippet: m.snippet })),
-      topTitle: top?.title ?? "Untitled topic",
-      topSnippet: top?.snippet ?? "",
-      sourceCount: cluster.sourceCount,
-    };
-  });
+  const writerInputs = toWriterInputs(aggregated, byId);
   let written: WrittenTopic[];
   try {
     const result = await writeTopics(options.writer, writerInputs, { batchSize: options.batchSize });
@@ -224,27 +257,7 @@ export async function runSorter(options: SortRunOptions, items: RawTrendRecord[]
   if (stats.writeFailed > 0) partial(`${String(stats.writeFailed)} topics use fallback text (write_failed)`);
 
   // 7. score (code) + rank + TOP_N.
-  const aggregatedById = new Map(aggregated.map((a) => [a.clusterId, a]));
-  const jevTopics: JevTopic[] = written.map((w) => {
-    const agg = aggregatedById.get(w.text.cluster_id);
-    // Aggregate votes only produce valid Category/Sentiment members
-    // ("none" folds to Other/neutral at classification time).
-    const category = (agg?.category ?? "Other") as JevTopic["category"];
-    const sentiment = (agg?.sentiment ?? "neutral") as JevTopic["sentiment"];
-    return {
-      title: w.text.title,
-      summary: w.text.summary,
-      category,
-      tags: w.text.tags,
-      relevance: Math.round((agg?.relevance ?? 0) * 100),
-      novelty: Math.round((agg?.novelty ?? 0) * 100),
-      momentum: agg?.momentum ?? "steady",
-      sentiment,
-      why_trending: w.text.why_trending,
-      content_angles: w.text.content_angles,
-      item_ids: agg?.itemIds ?? [],
-    };
-  });
+  const jevTopics = toJevTopics(aggregated, written);
   const scored = scoreTopics({
     topics: jevTopics,
     itemsById: byId,

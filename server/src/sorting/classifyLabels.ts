@@ -5,7 +5,7 @@
  * land on a safe default with the coercion flag preserved.
  */
 import type { StateDb } from "../db/sqlite.js";
-import { JevBudgetExceeded } from "../llm/jev.js";
+import { JevBudgetExceeded, JevHttpError, JevTimeoutError, JevValidationError } from "../llm/jev.js";
 import type { Classifier, ClassifyResult } from "../llm/classifier.js";
 import type { JevAnswers } from "../llm/jev.js";
 import { readCachedLabels, writeCachedLabels } from "../llm/labelCache.js";
@@ -110,6 +110,13 @@ export async function classifyItems(
       if (error instanceof JevBudgetExceeded) {
         stats.budgetStopped = true;
         break;
+      }
+      // Jev-family failures route to fallback/failed; anything else is a
+      // bug or a kill — propagate with the stage left `running` (resume path).
+      if (
+        !(error instanceof JevTimeoutError || error instanceof JevHttpError || error instanceof JevValidationError)
+      ) {
+        throw error;
       }
       if (deps.fallback === undefined || !deps.fallbackEnabled) {
         stats.failed.push(item.id);

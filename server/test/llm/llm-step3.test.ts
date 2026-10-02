@@ -11,7 +11,7 @@ import { applyMigrations, openDatabase } from "../../src/db/sqlite.js";
 import { LlmClient, LlmTimeoutError, LlmValidationError } from "../../src/llm/client.js";
 import type { LlmCallRecord } from "../../src/llm/client.js";
 import { FallbackClassifier, JevClassifier, classifyWithFallback } from "../../src/llm/classifier.js";
-import { createExtractorClient, createJevClient } from "../../src/llm/factory.js";
+import { createExtractorClient } from "../../src/llm/factory.js";
 import {
   JevBudgetExceeded,
   JevClient,
@@ -193,16 +193,25 @@ describe("STEP 3 omniroute client", () => {
     expect(dumped).not.toContain("super secret system prompt");
   });
 
-  it("LLM-13 missing model is a clear config error; explicit Jev never rides OmniRoute", () => {
+  it("LLM-13 missing model is a clear config error; explicit Jev never rides OmniRoute", async () => {
     expect(() => createExtractorClient(loadConfig({ OMNIROUTE_EXTRACT_MODEL: "" }))).toThrowError(
       /OMNIROUTE_EXTRACT_MODEL/,
     );
-    expect(() => createJevClient(loadConfig({ JEV_MODEL: "" }))).toThrowError(/JEV_MODEL/);
     const direct = resolveJevEndpoint(
       loadConfig({ JEV_BASE_URL: "https://api.typesafe.ai", JEV_API_KEY: "k", JEV_MODEL: "jev-latest" }),
     );
     expect(direct.via).toBe("direct");
     expect(direct.baseUrl).toBe("https://api.typesafe.ai");
+    // The typed Jev client posts exactly where told (SystemOne path, no
+    // silent rerouting through the chat gateway).
+    const server = await FakeJevServer.start("ok");
+    try {
+      const client = new JevClient({ baseUrl: server.url, path: "/v1/systemone", apiKey: "", model: "m" });
+      await client.classify({ title: "t", snippet: "s" }, { quality: { type: "noul", instructions: "q?" } });
+      expect(server.seen[0]?.path).toBe("/v1/systemone");
+    } finally {
+      await server.stop();
+    }
   });
 
   it("LLM-15 sse completion streams accumulate into one reply", async () => {

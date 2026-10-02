@@ -26,6 +26,7 @@
     "setup": "npm run setup --workspace=server",
     "collect": "npm run collect --workspace=server --",
     "pipeline": "npm run pipeline --workspace=server --",
+    "run:once": "npm run pipeline --workspace=server -- start",
     "rebuild-state": "npm run rebuild-state --workspace=server",
     "verify": "tsx scripts/verify.ts"
   },

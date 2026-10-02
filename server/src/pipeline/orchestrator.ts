@@ -33,9 +33,22 @@ import { pipelineBus } from "./events.js";
 import type { EventBus } from "./events.js";
 import type { StateDb } from "../db/sqlite.js";
 import { createExtractor, type LlmExtractor } from "../llm/extract.js";
-import { createExtractorClient, createJevClient } from "../llm/factory.js";
+import { createExtractorClient } from "../llm/factory.js";
 import { recordLlmCall } from "../llm/log.js";
-import { LlmHttpError, LlmTimeoutError, LlmValidationError } from "../llm/client.js";
+import { LlmClient, LlmHttpError, LlmTimeoutError, LlmValidationError } from "../llm/client.js";
+import { JevBudgetExceeded, JevClient, JevHttpError, JevTimeoutError, JevValidationError } from "../llm/jev.js";
+import type { Classifier } from "../llm/classifier.js";
+import { FallbackClassifier, JevClassifier } from "../llm/classifier.js";
+import { classifyItems } from "../sorting/classifyLabels.js";
+import type { ItemLabelRecord } from "../sorting/classifyLabels.js";
+import { aggregateClusters } from "../sorting/aggregate.js";
+import type { AggregatedCluster } from "../sorting/aggregate.js";
+import { clusterItems } from "../sorting/clusterTopics.js";
+import type { SameStoryCheck, TopicCluster } from "../sorting/clusterTopics.js";
+import { generateDigest } from "../sorting/digest.js";
+import { toJevTopics, toWriterInputs } from "../sorting/sortRun.js";
+import { writeTopics } from "../sorting/writeTopics.js";
+import type { WrittenTopic } from "../sorting/writeTopics.js";
 import { SheetsApiError } from "../sheets/client.js";
 import { createRealSheetsClient } from "../sheets/realClient.js";
 import type { SheetsClient } from "../sheets/client.js";
@@ -43,10 +56,6 @@ import { SheetsRepo } from "../sheets/repo.js";
 import type { SheetsWriteQueue } from "../sheets/queue.js";
 import { DigestRecord, RunLogRecord, SourceKey } from "../sheets/schema.js";
 import type { RawTrendRecord, SortedTrendRecord } from "../sheets/schema.js";
-import { generateDigest } from "../sorting/digest.js";
-import { mapAllBatches } from "../sorting/map.js";
-import type { JevJsonClient, JevTopic } from "../sorting/map.js";
-import { reduceTopics } from "../sorting/reduce.js";
 import { scoreTopics } from "../sorting/score.js";
 import { APP_VERSION } from "../version.js";
 import {
@@ -66,18 +75,18 @@ export const STAGES = [
   "collect",
   "normalize",
   "dedupe",
-  "engagement_norm",
   "persist_raw",
-  "sort_map",
-  "sort_reduce",
+  "sort_classify",
+  "sort_cluster",
+  "sort_write",
   "score",
   "persist_sorted",
   "finalize",
 ] as const;
 export type StageName = (typeof STAGES)[number];
 
-const SORT_STAGES: StageName[] = ["sort_map", "sort_reduce", "score", "persist_sorted", "finalize"];
-const PRE_PERSIST: StageName[] = ["collect", "normalize", "dedupe", "engagement_norm", "persist_raw"];
+const SORT_STAGES: StageName[] = ["sort_classify", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"];
+const PRE_PERSIST: StageName[] = ["collect", "normalize", "dedupe", "persist_raw"];
 
 export type RunTrigger = "cron" | "manual" | "catchup";
 
@@ -97,6 +106,14 @@ export class RunRequestError extends Error {
   }
 }
 
+/** Nothing to work with: every source errored/blocked, zero drafts. */
+export class NoDataError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoDataError";
+  }
+}
+
 export interface OrchestratorDeps {
   db: StateDb;
   config: TrendPulseConfig;
@@ -108,8 +125,14 @@ export interface OrchestratorDeps {
   sheetsQueue?: SheetsWriteQueue;
   /** Test seam: stub fetch for collectors. */
   fetchImpl?: typeof fetch;
-  /** Sort client. Default: real Jev client with llm_calls logging. */
-  jevClient?: JevJsonClient;
+  /** Sorter override: typed classifier (default: live Jev with budget + ledger). */
+  classifier?: Classifier;
+  /** Sorter override: fallback classifier (default: OmniRoute fallback model). */
+  fallbackClassifier?: Classifier;
+  /** Sorter override: Jev client for same_story pair checks. */
+  pairJevClient?: JevClient;
+  /** Sorter override: writer client (default: OmniRoute writer model). */
+  writerClient?: LlmClient;
   /** Webpage extractor. Default: real extractor client (rejects without a key). */
   extractor?: LlmExtractor;
 }
@@ -152,7 +175,12 @@ function isOperationalError(error: unknown): boolean {
     error instanceof SheetsApiError ||
     error instanceof LlmValidationError ||
     error instanceof LlmHttpError ||
-    error instanceof LlmTimeoutError
+    error instanceof LlmTimeoutError ||
+    error instanceof JevValidationError ||
+    error instanceof JevHttpError ||
+    error instanceof JevTimeoutError ||
+    error instanceof JevBudgetExceeded ||
+    error instanceof NoDataError
   );
 }
 
@@ -286,7 +314,7 @@ export class Orchestrator {
     if (PRE_PERSIST.includes(from) && this.hasPersistedRows(runId)) {
       releasePipelineLock(this.db, runId);
       throw new RunRequestError(
-        `run ${runId} already persisted rows — resume from sort_map or later, or start a new run`,
+        `run ${runId} already persisted rows — resume from sort_classify or later, or start a new run`,
       );
     }
     // Rewind from..end to pending; earlier done stages stay done.
@@ -341,12 +369,10 @@ export class Orchestrator {
       dedupe: () => {
         this.stageNoop(exec, "dedupe");
       },
-      engagement_norm: () => {
-        this.stageNoop(exec, "engagement_norm");
-      },
       persist_raw: () => this.stagePersistRaw(exec),
-      sort_map: () => this.stageSortMap(exec),
-      sort_reduce: () => this.stageSortReduce(exec),
+      sort_classify: () => this.stageSortClassify(exec),
+      sort_cluster: () => this.stageSortCluster(exec),
+      sort_write: () => this.stageSortWrite(exec),
       score: () => {
         this.stageScore(exec);
       },
@@ -423,6 +449,15 @@ export class Orchestrator {
 
   private async stagePrepare(exec: Execution): Promise<void> {
     if (exec.drafts.length === 0) {
+      const stats = exec.sourceStats.length > 0 ? exec.sourceStats : this.loadSourceStats(exec.runId);
+      if (stats.length > 0 && !stats.some((stat) => stat.status === "ok")) {
+        // Nothing was collected and nothing can be: fail here with the stage
+        // name instead of dying later on an empty sheet tab. A quiet rerun
+        // (drafts present but all seen) never lands here.
+        throw new NoDataError(
+          `no items collected (sources: ${stats.map((s) => `${s.source}=${s.status}`).join(", ")})`,
+        );
+      }
       // Resume path: collect already checkpointed — re-fetch (idempotent;
       // seen-filter + dedupe keep the working set stable).
       await this.stageCollect(exec);
@@ -467,91 +502,156 @@ export class Orchestrator {
     return resort ? readRunItemsByDate(this.db, exec.runDate) : readRunItems(this.db, exec.runId);
   }
 
-  private async stageSortMap(exec: Execution): Promise<void> {
+  private async stageSortClassify(exec: Execution): Promise<void> {
     const items = this.sortItems(exec);
-    const mapped = await mapAllBatches({
-      client: this.jevClient(exec.runId),
-      items,
-      niches: this.config.niches,
-      runDate: exec.runDate,
-      batchSize: exec.settings.sortBatchSize,
-      concurrency: this.config.llmConcurrency,
-      log: this.log,
-    });
-    const statusOf = new Map<string, "sorted" | "discarded" | "sort_failed">();
-    for (const topic of mapped.topics) {
-      for (const id of topic.item_ids) statusOf.set(id, "sorted");
-    }
-    for (const entry of mapped.discarded) statusOf.set(entry.item_id, "discarded");
-    for (const id of mapped.failedItemIds) statusOf.set(id, "sort_failed");
-    if (mapped.failedItemIds.length > 0) {
-      exec.partialReasons.push(`${String(mapped.failedItemIds.length)} items sort_failed`);
-    }
+    const classifier = this.sorterClassifier(exec.runId);
+    const fallback = this.sorterFallback(exec.runId);
+    const { labeled, stats } = await classifyItems(
+      {
+        db: this.db,
+        classifier,
+        fallback,
+        fallbackEnabled: this.config.jevFallback && fallback !== undefined,
+        model: classifier.modelId,
+        niches: this.config.niches,
+      },
+      items.map((item) => ({
+        id: item.id,
+        contentHash: item.content_hash,
+        title: item.title,
+        snippet: item.snippet,
+        source: item.source,
+        publishedAt: item.published_at,
+      })),
+    );
     const update = this.db.prepare("UPDATE items_run SET sort_status = ? WHERE id = ?");
     const write = this.db.transaction(() => {
-      for (const [id, status] of statusOf) update.run(status, id);
+      for (const entry of labeled) {
+        if (entry.labels.quality < this.config.qualityMin) update.run("discarded", entry.itemId);
+      }
     });
     write();
-    this.setStageDetail(exec.runId, "sort_map", {
-      topics: mapped.topics,
-      discarded: mapped.discarded,
-      failedItemIds: mapped.failedItemIds,
-      batchCount: mapped.batchCount,
-      droppedUnknownIds: mapped.droppedUnknownIds,
-      duplicateClaims: mapped.duplicateClaims,
-    });
-  }
-
-  private loadMapDetail(exec: Execution): { topics: JevTopic[]; batchCount: number } {
-    const detail = this.stageDetail(exec.runId, "sort_map") as {
-      topics?: unknown;
-      batchCount?: unknown;
-    } | null;
-    if (!detail || !Array.isArray(detail.topics)) {
-      throw new RunRequestError(`sort_map output missing for run ${exec.runId} — run sort_map first`);
+    if (stats.failed.length > 0) {
+      const markFailed = this.db.prepare("UPDATE items_run SET sort_status = 'sort_failed' WHERE id = ?");
+      const mark = this.db.transaction(() => {
+        for (const id of stats.failed) markFailed.run(id);
+      });
+      mark();
+      exec.partialReasons.push(`${String(stats.failed.length)} items unclassifiable (sort_failed)`);
     }
-    return {
-      topics: detail.topics as JevTopic[],
-      batchCount: typeof detail.batchCount === "number" ? detail.batchCount : 1,
-    };
+    if (stats.budgetStopped) exec.partialReasons.push("jev budget exhausted; unclassified items stay pending");
+    this.setStageDetail(exec.runId, "sort_classify", {
+      labels: labeled.map((entry) => ({ itemId: entry.itemId, labels: entry.labels })),
+      discarded: labeled.filter((entry) => entry.labels.quality < this.config.qualityMin).map((entry) => entry.itemId),
+      failedItemIds: stats.failed,
+      classified: stats.classified,
+      cached: stats.cached,
+      fallbackWrites: stats.fallbackUsed,
+      budgetStopped: stats.budgetStopped,
+    });
   }
 
-  private async stageSortReduce(exec: Execution): Promise<void> {
-    const map = this.loadMapDetail(exec);
+  private loadClassifyDetail(exec: Execution): { labels: { itemId: string; labels: ItemLabelRecord["labels"] }[] } {
+    const detail = this.stageDetail(exec.runId, "sort_classify") as { labels?: unknown } | null;
+    if (!detail || !Array.isArray(detail.labels)) {
+      throw new RunRequestError(`sort_classify output missing for run ${exec.runId} — run sort_classify first`);
+    }
+    return detail as { labels: { itemId: string; labels: ItemLabelRecord["labels"] }[] };
+  }
+
+  private async stageSortCluster(exec: Execution): Promise<void> {
+    const classified = this.loadClassifyDetail(exec);
+    const labelMap = new Map(classified.labels.map((entry) => [entry.itemId, entry.labels]));
+    const items = this.sortItems(exec).filter((item) => labelMap.has(item.id));
+    const clusters = await clusterItems(
+      items.map((item) => ({ id: item.id, title: item.title, snippet: item.snippet })),
+      this.sameStoryOption(exec),
+    );
+    const aggregateById = new Map<string, { id: string; source: string; engagementNorm: number; firstSeenToday: boolean; labels: ItemLabelRecord["labels"] }>();
+    const hashes = [...new Set(items.map((item) => item.content_hash))];
+    const firstSeen = this.firstSeenByItem(items, hashes);
+    for (const item of items) {
+      const labels = labelMap.get(item.id);
+      if (!labels) continue;
+      aggregateById.set(item.id, {
+        id: item.id,
+        source: item.source,
+        engagementNorm: item.engagement_norm,
+        firstSeenToday: firstSeen.get(item.id) === exec.runDate,
+        labels,
+      });
+    }
+    const aggregated = aggregateClusters(clusters, aggregateById);
+    this.setStageDetail(exec.runId, "sort_cluster", { clusters, aggregated });
+  }
+
+  private sameStoryOption(exec: Execution): { sameStory?: SameStoryCheck | undefined } {
+    const pairClient = this.sorterPairClient(exec.runId);
+    if (!pairClient) return {};
+    const sameStory: SameStoryCheck = async (a, b) => {
+      try {
+        const result = await pairClient.classify(
+          { a: `${a.title} ${a.snippet}`.slice(0, 2000), b: `${b.title} ${b.snippet}`.slice(0, 2000) },
+          { same_story: { type: "noul", instructions: "Are these two items about the same real-world story?" } },
+          "jev_same_story",
+        );
+        const answer = result.answers["same_story"];
+        return answer?.kind === "noul" ? answer.noul : null;
+      } catch (error) {
+        if (error instanceof JevBudgetExceeded) return null;
+        throw error;
+      }
+    };
+    return { sameStory };
+  }
+
+  private loadClusterDetail(exec: Execution): { clusters: TopicCluster[]; aggregated: AggregatedCluster[] } {
+    const detail = this.stageDetail(exec.runId, "sort_cluster") as {
+      clusters?: unknown;
+      aggregated?: unknown;
+    } | null;
+    if (!detail || !Array.isArray(detail.clusters) || !Array.isArray(detail.aggregated)) {
+      throw new RunRequestError(`sort_cluster output missing for run ${exec.runId} — run sort_cluster first`);
+    }
+    return detail as { clusters: TopicCluster[]; aggregated: AggregatedCluster[] };
+  }
+
+  private async stageSortWrite(exec: Execution): Promise<void> {
+    const { aggregated } = this.loadClusterDetail(exec);
     const items = this.sortItems(exec);
-    const reduced = await reduceTopics({
-      client: this.jevClient(exec.runId),
-      topics: map.topics,
-      knownItemIds: new Set(items.map((item) => item.id)),
-      batchCount: map.batchCount,
-      log: this.log,
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const inputs = toWriterInputs(aggregated, byId);
+    const result = await writeTopics(this.sorterWriter(exec.runId), inputs, {
+      batchSize: exec.settings.sortBatchSize,
     });
-    this.setStageDetail(exec.runId, "sort_reduce", {
-      topics: reduced.topics,
-      reduced: reduced.reduced,
-      droppedUnknownIds: reduced.droppedUnknownIds,
-      duplicateClaims: reduced.duplicateClaims,
-    });
+    const written: WrittenTopic[] = result.topics;
+    const failedCards = written.filter((w) => w.writeFailed).length;
+    if (failedCards > 0) {
+      exec.partialReasons.push(`${String(failedCards)} topics use fallback text (write_failed)`);
+    }
+    this.setStageDetail(exec.runId, "sort_write", { written });
   }
 
   private stageScore(exec: Execution): void {
-    const detail = this.stageDetail(exec.runId, "sort_reduce") as { topics?: unknown } | null;
-    if (!detail || !Array.isArray(detail.topics)) {
-      throw new RunRequestError(`sort_reduce output missing for run ${exec.runId} — run sort_reduce first`);
+    const detail = this.stageDetail(exec.runId, "sort_write") as { written?: unknown } | null;
+    if (!detail || !Array.isArray(detail.written)) {
+      throw new RunRequestError(`sort_write output missing for run ${exec.runId} — run sort_write first`);
     }
+    const { aggregated } = this.loadClusterDetail(exec);
     const items = this.sortItems(exec);
     const itemsById = new Map(items.map((item) => [item.id, item]));
     const hashes = [...new Set(items.map((item) => item.content_hash))];
     const firstSeenDates = this.firstSeenByItem(items, hashes);
     const scored = scoreTopics({
-      topics: detail.topics as JevTopic[],
+      topics: toJevTopics(aggregated, detail.written as WrittenTopic[]),
       itemsById,
       runId: exec.runId,
       runDate: exec.runDate,
-      jevModel: this.jevClient(exec.runId).modelId,
+      jevModel: this.sorterClassifier(exec.runId).modelId,
       weights: exec.settings.scoreWeights,
       topN: exec.settings.topN,
       firstSeenDates,
+      promptVersion: "w1",
     });
     this.db.prepare("UPDATE runs SET topics_count = ? WHERE id = ?").run(scored.topics.length, exec.runId);
     this.setStageDetail(exec.runId, "score", {
@@ -601,8 +701,8 @@ export class Orchestrator {
     const digestRow = await repo.readDigest(exec.runDate);
     if (topics.length > 0 && !(digestRow.row && digestRow.row.run_id === exec.runId)) {
       try {
-        const top = [...topics].sort((a, b) => a.rank - b.rank).slice(0, 5);
-        const digest = await generateDigest(this.jevClient(exec.runId), top);
+        const top = [...topics].sort((a, b) => a.rank - b.rank).slice(0, 10);
+        const digest = await generateDigest(this.sorterWriter(exec.runId), top);
         const categories = new Map<string, number>();
         for (const topic of topics) categories.set(topic.category, (categories.get(topic.category) ?? 0) + 1);
         const topCategories = [...categories.entries()]
@@ -830,9 +930,60 @@ export class Orchestrator {
     };
   }
 
-  private jevClient(runId: string): JevJsonClient {
-    if (this.deps.jevClient) return this.deps.jevClient;
-    return createJevClient(this.config, {
+  private sorterClassifier(runId: string): Classifier {
+    if (this.deps.classifier) return this.deps.classifier;
+    return new JevClassifier(this.sorterJev(runId));
+  }
+
+  private sorterJev(runId: string): JevClient {
+    if (this.deps.pairJevClient) return this.deps.pairJevClient;
+    return new JevClient({
+      baseUrl: this.config.jevBaseUrl,
+      path: this.config.jevPath,
+      apiKey: this.config.jevApiKey,
+      model: this.config.jevModel,
+      concurrency: this.config.jevConcurrency,
+      pricePerMInput: this.config.jevPricePerMInput,
+      budgetUsd: this.config.jevRunBudgetUsd,
+      timeoutMs: this.config.llmTimeoutMs,
+      onCall: (record) => {
+        recordLlmCall(this.db, runId, record);
+      },
+    });
+  }
+
+  private sorterFallback(runId: string): Classifier | undefined {
+    if (this.deps.fallbackClassifier) return this.deps.fallbackClassifier;
+    if (this.config.omnirouteFallbackModel.trim() === "") return undefined;
+    return new FallbackClassifier(
+      new LlmClient({
+        baseUrl: this.config.omnirouteBaseUrl,
+        apiKey: this.config.omnirouteApiKey,
+        model: this.config.omnirouteFallbackModel,
+        clientName: "extractor",
+        timeoutMs: this.config.llmTimeoutMs,
+        onCall: (record) => {
+          recordLlmCall(this.db, runId, record);
+        },
+      }),
+    );
+  }
+
+  /** pairJevClient doubles as the same_story client; fresh instance otherwise. */
+  private sorterPairClient(runId: string): JevClient | undefined {
+    if (this.deps.pairJevClient) return this.deps.pairJevClient;
+    if (this.config.jevApiKey.trim() === "" && this.config.jevBaseUrl.trim() === "") return undefined;
+    return this.sorterJev(runId);
+  }
+
+  private sorterWriter(runId: string): LlmClient {
+    if (this.deps.writerClient) return this.deps.writerClient;
+    return new LlmClient({
+      baseUrl: this.config.omnirouteBaseUrl,
+      apiKey: this.config.omnirouteApiKey,
+      model: this.config.omnirouteWriterModel,
+      clientName: "extractor",
+      timeoutMs: this.config.llmTimeoutMs,
       onCall: (record) => {
         recordLlmCall(this.db, runId, record);
       },

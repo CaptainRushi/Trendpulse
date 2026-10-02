@@ -365,3 +365,19 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Reason:** No `writer_model` column exists in `sorted_trends`; `prompt_version: "w1"` marks the new pipeline.
 - **Decision:** New `test/sorting/srt-step6.test.ts` (17 ID tests: SRT-01…15, JEV-15, W-06, W-20).
 - **Live verdict (real HN+RSS, Jev $0.000027 for 14 items):** titles accurate and specific, categories/scores/momentum sensible, all-`new` correct. Weak spots (free-tier ceiling, not bugs): 2/11 cards fell back after truncation battles (flagged `write_failed`), some summaries echo HN metadata instead of abstracting, digest failed its sentence count twice → skipped honestly with partial flagged. Verdict: good enough for the Day-1 slice; upgrades are paid-writer or tighter-budget (latency cost), not correctness.
+
+## 2026-10-02 — Step 7 orchestrator rewire (docs/12 Prompt 7, ponytail full)
+
+- **Decision:** Stages are now the Day-1 ten (no `engagement_norm` checkpoint, no `sort_map`/`sort_reduce`): classify → cluster → write → score → persist_sorted, each checkpointed with skip-on-rerun. Old map/reduce modules + their 5 test files + `StubJevClient` + retired prompts deleted.
+- **Reason:** docs/11 rewire replaces Jev-as-chat; dead sorter is dead code. `scoreTopics`/`generateDigest` reused (JevTopic schema moved into score.ts, digest takes a local JsonClient surface, digest input raised to top-10 in Step 6).
+- **Decision:** Orchestrator deps are now `classifier` / `fallbackClassifier` / `pairJevClient` / `writerClient` (built live from config when absent); `context.ts` passes them through; old `jevClient: JevJsonClient` seam removed everywhere incl. verify + runs tests.
+- **Reason:** One seam per Step-6 role; fakes inject the same way.
+- **Decision:** New `NoDataError` (operational): zero drafts with no `ok` source fails `normalize` loudly instead of dying later on an empty sheet tab.
+- **Reason:** Step-7 task 2 verbatim ("a stage cannot proceed … no data → failed"). Quiet reruns (drafts present, all seen) never hit it; fresh `--stages` runs starting at normalize still re-collect as before.
+- **Decision:** Unexpected classifier errors propagate (stage left `running`, kill-resume path); Jev-family failures route to fallback/`sort_failed` (SRT-08a stub now throws `JevTimeoutError`).
+- **Reason:** Matches the kill semantics everything else follows; "Jev down" still degrades per Step 6.
+- **Decision:** Budget is enforced within classify (the big spend); pair checks get a fresh client and return null on budget exhaustion.
+- **Reason:** Threading one client through resume adds lifecycle complexity for cents of drift.
+- **Decision:** `run:once` root alias → `pipeline start` (stage table on stderr, summary JSON on stdout).
+- **Decision:** New `run-step7.test.ts` (RUN-01/02/03/04/07/08/12/14, W-07) + `cron-step7.test.ts` (RUN-09 live 1.3s tick, RUN-10 catch-up end-to-end).
+- **Live `run:once` ×2 (real HN, no sheet yet):** collect/normalize/dedupe `done`, `persist_raw` failed with the actionable service-account message, run `failed` — exactly the task-2 failure semantics. Sheet-backed rerun proof (0 added rows) waits on your Google key + sheet id; fakes prove it (NRM-05, verify F13).
