@@ -46,6 +46,8 @@ export interface ScoreOptions {
   topN?: number;
   /** itemId → first_seen_date (YYYY-MM-DD); absent = unknown, skips the check. */
   firstSeenDates?: Map<string, string>;
+  /** Provenance marker; Day-1 sorter passes "w1" (legacy map/reduce: "v1"). */
+  promptVersion?: string;
   now?: string;
 }
 
@@ -158,7 +160,7 @@ export function scoreTopics(options: ScoreOptions): ScoreResult {
       source_count: entry.source_count,
       top_urls: entry.top_urls,
       jev_model: options.jevModel,
-      prompt_version: PROMPT_VERSION,
+      prompt_version: options.promptVersion ?? PROMPT_VERSION,
       sorted_at: now,
       is_latest: true,
       hidden: false,

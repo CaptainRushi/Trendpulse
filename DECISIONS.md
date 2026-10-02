@@ -350,3 +350,18 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** Float percentiles asserted with `toBeCloseTo`, not `toEqual`.
 - **Reason:** `1 − 1/3` is `...667` while `2/3` is `...666` — exact equality is representation luck, not contract.
 - **Live counts (real HN + hnrss.org, limit 10 each):** collected 20 → normalized 20 (0 dropped) → kept 15, merged 5 (frontpage overlap, expected) → scored 15.
+
+## 2026-10-02 — Step 6 sorter (docs/12 Prompt 6, docs/11 §1.3, ponytail full)
+
+- **Decision:** New chain beside the legacy map/reduce (orchestrator switches in Step 7): `questions.ts` (q1 set, niche_fit only with niches) → `classifyLabels.ts` (ONE Jev request/item, LabelCache, budget stop, fallback, ItemLabels mapping with `none`→Other/neutral) → `clusterTopics.ts` (union-find, ≥0.85 merge, 0.60–0.85 `same_story` ≥0.80, injectable oracle) → `aggregate.ts` (weighted votes, R/N/E, `computeMomentum`, never `fading`) → `writeTopics.ts` (verbatim prompt, delimited clusters, repair→split→fallback, shared WriterOutput) → `sortRun.ts` (score adapter into existing `scoreTopics` + `promptVersion: "w1"`, digest top-10, persist + markLatest).
+- **Reason:** docs/11 §1.3 verbatim; shared `ItemLabels`/`WriterOutput` make the frontend contract real (server now depends on `@trendpulse/shared`, which compiles to `dist` first in root `build`).
+- **Decision:** Writer batches split by input chars (`WRITER_MAX_BATCH_CHARS = 1200`, within `SORT_BATCH_SIZE`) plus follow-up re-asks (max 2) for valid-but-partial batches.
+- **Reason:** Measured live: free routed models stop after the first card on ~2k+ char inputs (13 clusters → 1 topic). Retried batches complete; leftovers get flagged fallback text, never silent.
+- **Decision:** Digest input raised 5 → 10 topics (digest.test updated).
+- **Reason:** Step-6 task 8 verbatim.
+- **Decision:** `rise`-with-all-new stays `rising` (scoreTopics backstop only demotes peak/steady/fading → `new`).
+- **Reason:** `computeMomentum` gives `new` only when the rule fires first; the old coerce is a backstop, not the rule.
+- **Decision:** `jev_model` keeps the Jev model id; writer model travels in stage detail (Step 7), not a new sheet column.
+- **Reason:** No `writer_model` column exists in `sorted_trends`; `prompt_version: "w1"` marks the new pipeline.
+- **Decision:** New `test/sorting/srt-step6.test.ts` (17 ID tests: SRT-01…15, JEV-15, W-06, W-20).
+- **Live verdict (real HN+RSS, Jev $0.000027 for 14 items):** titles accurate and specific, categories/scores/momentum sensible, all-`new` correct. Weak spots (free-tier ceiling, not bugs): 2/11 cards fell back after truncation battles (flagged `write_failed`), some summaries echo HN metadata instead of abstracting, digest failed its sentence count twice → skipped honestly with partial flagged. Verdict: good enough for the Day-1 slice; upgrades are paid-writer or tighter-budget (latency cost), not correctness.

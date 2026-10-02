@@ -11,8 +11,8 @@ import { LlmValidationError } from "../llm/client.js";
 import { JEV_DIGEST_SYSTEM } from "../llm/prompts/jev.js";
 import type { JevJsonClient } from "./map.js";
 
-/** Digest covers at most this many top-ranked topics. */
-export const DIGEST_TOPIC_LIMIT = 5;
+/** Digest covers at most this many top-ranked topics (Step-6 task 8). */
+export const DIGEST_TOPIC_LIMIT = 10;
 export const DIGEST_MIN_SENTENCES = 3;
 export const DIGEST_MAX_SENTENCES = 5;
 /** Targeted-repair aim: middle of the allowed range. */

@@ -24,22 +24,22 @@ describe("countSentences", () => {
     expect(countSentences("No terminator")).toBe(1);
   });
 
-  it("bounds are 3–5", () => {
+  it("bounds are 3–5 sentences over the top 10 topics", () => {
     expect(DIGEST_MIN_SENTENCES).toBe(3);
     expect(DIGEST_MAX_SENTENCES).toBe(5);
-    expect(DIGEST_TOPIC_LIMIT).toBe(5);
+    expect(DIGEST_TOPIC_LIMIT).toBe(10);
   });
 });
 
 describe("generateDigest", () => {
-  it("sends at most the top 5 topics and accepts 3–5 sentences", async () => {
+  it("sends at most the top 10 topics and accepts 3–5 sentences", async () => {
     const client = new StubJevClient((_tag, user) => {
       expect(user).toContain("Topic 0");
-      expect(user).toContain("Topic 4");
-      expect(user).not.toContain("Topic 5");
+      expect(user).toContain("Topic 9");
+      expect(user).not.toContain("Topic 10");
       return { digest: "One. Two. Three. Four." };
     });
-    const result = await generateDigest(client, topics(7));
+    const result = await generateDigest(client, topics(12));
     expect(result.digest).toBe("One. Two. Three. Four.");
     expect(result.repaired).toBe(false);
     expect(result.model).toBe("stub-jev");
