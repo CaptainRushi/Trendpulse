@@ -28,7 +28,8 @@
     "pipeline": "npm run pipeline --workspace=server --",
     "run:once": "npm run pipeline --workspace=server -- start",
     "rebuild-state": "npm run rebuild-state --workspace=server",
-    "verify": "tsx scripts/verify.ts"
+    "verify": "tsx scripts/verify.ts",
+    "verify:live": "tsx scripts/verify.ts --mode live"
   },
   "devDependencies": {
     "@eslint/js": "^9.12.0",

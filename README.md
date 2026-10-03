@@ -80,6 +80,19 @@ Jev is "a model id that clusters and scores" — configure where it runs:
   `POST /api/setup/test-jev`) — it runs a tiny JSON round-trip and reports
   latency.
 
+## Cost notes
+
+Jev charges per million input tokens read (answers are free):
+`JEV_PRICE_PER_M_INPUT` (default `0.04`). Input is estimated as
+characters ÷ 4 and logged per call in `llm_calls.cost_usd`. A full day
+(~350 items) typically costs a few cents — live runs measured $0.000027
+for 14 items.
+
+`JEV_RUN_BUDGET_USD` (default `1.00`) caps classification spend per run:
+exceeding it stops classification, marks the run `partial`, and leaves
+the rest `pending`. The Today hero block shows today's spend from
+`GET /api/jev/health`.
+
 ## Daily operation
 
 - The scheduler runs `SCHEDULE_CRON` (default `0 6 * * *`) in `TZ`.

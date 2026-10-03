@@ -6,6 +6,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { stdin as input, stdout as output, exit } from "node:process";
 import { createInterface } from "node:readline/promises";
 import cron from "node-cron";
@@ -14,8 +15,23 @@ import { parseEnvText, upsertEnvLines } from "../src/config/envFile.js";
 import { testJevConnection, testOmnirouteConnection } from "../src/llm/probe.js";
 import { createRealSheetsClient } from "../src/sheets/realClient.js";
 
-const repoRoot = join(dirname(new URL(".", import.meta.url).pathname), "..", "..");
+const repoRoot = join(dirname(fileURLToPath(new URL(".", import.meta.url))), "..");
 const envPath = join(repoRoot, ".env");
+const examplePath = join(repoRoot, ".env.example");
+
+/** Copy .env.example to .env when missing, then print what is still empty. */
+function bootstrapEnv(): Map<string, string> {
+  if (!existsSync(envPath) && existsSync(examplePath)) {
+    writeFileSync(envPath, readFileSync(examplePath, "utf8"));
+    output.write(`Copied .env.example to .env — fill in the blanks below.\n`);
+  }
+  const current = existsSync(envPath) ? parseEnvText(readFileSync(envPath, "utf8")) : new Map<string, string>();
+  const empty = ["GOOGLE_SHEET_ID", "OMNIROUTE_API_KEY", "OMNIROUTE_EXTRACT_MODEL", "JEV_API_KEY", "JEV_MODEL"].filter(
+    (key) => (current.get(key) ?? "").trim() === "",
+  );
+  output.write(empty.length === 0 ? "Checklist: all key values are set.\n" : `Still empty: ${empty.join(", ")}.\n`);
+  return current;
+}
 
 const rl = createInterface({ input, output });
 
@@ -51,13 +67,14 @@ function section(title: string): void {
 }
 
 async function main(): Promise<void> {
+  const bootstrapped = bootstrapEnv();
   if (!input.isTTY) {
     process.stderr.write("setup: needs an interactive terminal (stdin is not a TTY).\n");
     exit(1);
   }
   output.write("TrendPulse setup — values in [brackets] are the current ones, Enter keeps them.\n");
 
-  const existing = existsSync(envPath) ? parseEnvText(readFileSync(envPath, "utf8")) : new Map<string, string>();
+  const existing = bootstrapped;
   const get = (key: string, fallback: string): string => existing.get(key) ?? fallback;
   const values = new Map<string, string>();
 

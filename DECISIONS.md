@@ -402,3 +402,14 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** First-run shows a Steps checklist on Today (sheets/omniroute/jev/run) instead of forcing `/wizard`; the wizard page itself still works and its e2e now enters at `/wizard` directly.
 - **Cuts applied:** STY-03 contrast computation (sixth in the cut order) — pairs follow the token rules by construction; Raw Data page kept (was second in cut order, but it needed no new work).
 - **Live look (real backend, no sheet → checklist state):** 1280px — Bar + lime hero + numbered Steps all correct. 375px — Bar overflowed (links squeezed, actions wrapped mid-button); fixed with wrap + nowrap, verified in screenshot. No page-level horizontal scroll at 375/800/1280 (smoke test asserts).
+
+## 2026-10-03 — Step 10 day close (docs/12 Prompt 10, ponytail full)
+
+- **Decision:** `verify/registry.ts` now holds the exact docs/12 §8 board (23 rows); `scripts/verify.ts` runs each row's named tests via vitest `-t` (fake mode) and real-service probes where credentials exist (live mode, rest SKIP). Deleted the old 46-check superset + scrapling stubs.
+- **Reason:** The old board tested phases that don't exist yet; the Day-1 contract is the 23 rows.
+- **Decision (bug, found via new setup behavior):** `server/scripts/setup.ts` resolved the repo root one level too high AND through a leading-slash path that `existsSync` rejects — it read/wrote nothing real. Fixed with `fileURLToPath` (matches `doctor.ts`).
+- **Decision:** `npm run setup` now copies `.env.example → .env` when missing and prints the still-empty keys before the interactive walk.
+- **Decision:** README gained only the missing piece (Jev price + run-budget cost notes); the rest already met spec.
+- **Live end-to-end (blocked):** `run:once` collects 5 real HN items, fails at `persist_raw` (no sheet). Doctor: node/env/sqlite ok; HN/Trends/GitHub/Wikipedia ping ok; reddit 403 WARN (expected); Jev `jev-latest` sample ok; OmniRoute FAIL (gateway down). Still unverifiable without a sheet: raw/sorted/digest/runs_log rows, rerun-≈0, wrong-key fallback run, dashboard run-now.
+- **Secrets check:** Jev + OmniRoute keys appear in zero repo files outside `.env` (code, docs, logs, reports, both sqlite DBs clean); no service-account key file exists to leak; API masking covered by API-11/SEC-06 tests (green).
+- **Cuts confirmed Day-1:** STY-03, JEV-03 (fixture-gated), full kill-resume/chaos, Scrapling sidecar. See NEXT.md for Day 2 order.
