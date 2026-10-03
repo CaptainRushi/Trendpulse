@@ -8,6 +8,7 @@ import { applyMigrations, openDatabase } from "./db/sqlite.js";
 import { Orchestrator } from "./pipeline/orchestrator.js";
 import { PipelineScheduler } from "./scheduler/cron.js";
 import { recoverOnBoot } from "./scheduler/lock.js";
+import { ScraplingSupervisor, setScrapingSupervisor } from "./scraping/supervisor.js";
 import { createLogger, setRootLogger } from "./utils/logger.js";
 import { APP_VERSION } from "./version.js";
 
@@ -59,6 +60,31 @@ async function main(): Promise<void> {
   }
   if (recovered.releasedStaleLocks > 0) {
     logger.info({ count: recovered.releasedStaleLocks }, "released dead pipeline locks");
+  }
+
+  // Scrapling sidecar (S1 stretch): opt-in via SCRAPLING_ENABLED. A dead
+  // sidecar never blocks boot — the webpage collector degrades to native.
+  const scraping = new ScraplingSupervisor({
+    baseUrl: config.scrapingUrl,
+    enabled: config.scrapingEnabled,
+    log: logger,
+  });
+  setScrapingSupervisor(scraping);
+  if (config.scrapingEnabled) {
+    try {
+      await scraping.start();
+      logger.info("scrapling sidecar healthy");
+    } catch (error) {
+      logger.warn(
+        { err: error instanceof Error ? error.message : String(error) },
+        "scrapling sidecar unavailable at boot; webpage falls back to native fetch",
+      );
+    }
+    const shutdown = (): void => {
+      void scraping.stop().finally(() => process.exit(0));
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
   }
 
   const orchestrator = new Orchestrator({ db, config, log: logger });

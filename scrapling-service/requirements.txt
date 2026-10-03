@@ -1,0 +1,10 @@
+# Pinned direct deps (transitives resolve; see README for the install log).
+scrapling==0.4.15
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+curl-cffi==0.16.3
+playwright==1.63.0
+patchright==1.63.0
+browserforge==1.2.4
+msgspec==0.22.0

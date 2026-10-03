@@ -40,3 +40,7 @@ playwright/.cache/
 .eslintcache
 *.tsbuildinfo
 .vite/
+
+# Python sidecar (STEP S1)
+scrapling-service/venv/
+__pycache__/

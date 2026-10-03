@@ -72,6 +72,8 @@ const EnvSchema = z.object({
   DEDUPE_DAYS: numField(3).pipe(z.number().int().min(0)),
   USER_AGENT: z.string().default("TrendPulse/1.0 (+local)"),
   ENABLE_PLAYWRIGHT: boolField(false),
+  SCRAPLING_ENABLED: boolField(false),
+  SCRAPLING_URL: z.string().default("http://127.0.0.1:4318"),
 
   REDDIT_CLIENT_ID: z.string().default(""),
   REDDIT_CLIENT_SECRET: z.string().default(""),
@@ -121,6 +123,8 @@ export interface TrendPulseConfig {
   dedupeDays: number;
   userAgent: string;
   enablePlaywright: boolean;
+  scrapingEnabled: boolean;
+  scrapingUrl: string;
   redditClientId: string;
   redditClientSecret: string;
   githubToken: string;
@@ -191,6 +195,8 @@ export function loadConfig(env: RawEnv = process.env): TrendPulseConfig {
     dedupeDays: e.DEDUPE_DAYS,
     userAgent: e.USER_AGENT,
     enablePlaywright: e.ENABLE_PLAYWRIGHT,
+    scrapingEnabled: e.SCRAPLING_ENABLED,
+    scrapingUrl: e.SCRAPLING_URL.replace(/\/+$/, ""),
     redditClientId: e.REDDIT_CLIENT_ID,
     redditClientSecret: e.REDDIT_CLIENT_SECRET,
     githubToken: e.GITHUB_TOKEN,

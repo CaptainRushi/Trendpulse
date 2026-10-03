@@ -10,6 +10,8 @@ import pLimit from "p-limit";
 import type { Collector, CollectResult, PingResult, RawItemDraft, RawItemDraftInput } from "./types.js";
 import { RawItemDraft as DraftSchema } from "./types.js";
 import { httpPing, needsConfig } from "./ping.js";
+import { ensureScraping } from "../scraping/supervisor.js";
+import { assertPublicUrl } from "../scraping/guard.js";
 import { redactUrlForLog } from "../utils/url.js";
 
 /** Configured page URLs (http/https only). */
@@ -75,22 +77,45 @@ export const webpageCollector: Collector = {
           // Observability only: query strings may carry tokens (signed URLs).
           const loggedUrl = redactUrlForLog(url);
           try {
-            let html = "";
-            const res = await ctx.http.get(url, { etag: true, robots: true });
-            if (res.robotsBlocked) {
-              ctx.log.warn({ url: loggedUrl }, "webpage: robots.txt disallows this URL, skipped");
-              errors.push(`${loggedUrl}: robots.txt disallowed`);
-              return null;
+            let html: string | null = null;
+            let sidecarUp = false;
+            // No Node-side gate here: the sidecar enforces SSRF/robots
+            // itself (its test allowlist covers fixture servers).
+            const scraper = ctx.scraping ?? (await ensureScraping());
+            if (scraper) {
+              sidecarUp = true;
+              try {
+                const scraped = await scraper.fetchPage({ url, mode: "auto", timeoutMs: 30000 });
+                if (scraped.status === "ok") {
+                  html = scraped.html;
+                } else if (scraped.status === "blocked") {
+                  errors.push(`${loggedUrl}: sidecar ${scraped.reason}`);
+                  return null;
+                }
+                // "error" falls through to the native static fallback below.
+              } catch {
+                // Sidecar failed mid-fetch: native static fallback, no second browser stack.
+              }
             }
-            if (res.notModified) return null;
-            if (res.status !== 200) {
-              errors.push(`${loggedUrl}: HTTP ${String(res.status)}`);
-              return null;
+            if (html === null) {
+              // Native static fallback: gate locally, the sidecar is out.
+              await assertPublicUrl(url);
+              const res = await ctx.http.get(url, { etag: true, robots: true });
+              if (res.robotsBlocked) {
+                ctx.log.warn({ url: loggedUrl }, "webpage: robots.txt disallows this URL, skipped");
+                errors.push(`${loggedUrl}: robots.txt disallowed`);
+                return null;
+              }
+              if (res.notModified) return null;
+              if (res.status !== 200) {
+                errors.push(`${loggedUrl}: HTTP ${String(res.status)}`);
+                return null;
+              }
+              html = res.text;
             }
-            html = res.text;
 
             let readable = extractReadable(html, url);
-            if (!readable && ctx.enablePlaywright) {
+            if (!readable && !sidecarUp && ctx.enablePlaywright) {
               readable = await renderWithPlaywright(ctx, url);
             }
             if (!readable) {

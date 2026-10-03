@@ -22,6 +22,7 @@
 import type { Logger } from "pino";
 import { HttpClient } from "../collectors/http.js";
 import { runCollectors } from "../collectors/registry.js";
+import { scrapingClient } from "../scraping/supervisor.js";
 import type { CollectContext, RawItemDraft, SourceStats } from "../collectors/types.js";
 import { createLogger } from "../utils/logger.js";
 import { DomainRateLimiter } from "../utils/rate-limit.js";
@@ -925,6 +926,7 @@ export class Orchestrator {
       enablePlaywright: this.config.enablePlaywright,
       http,
       llm,
+      scraping: scrapingClient(),
       signal: new AbortController().signal,
       log: this.log,
     };

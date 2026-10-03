@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pino from "pino";
 import type { CollectContext, RawItemDraft } from "../../src/collectors/types.js";
+import type { ScraplingClient } from "../../src/scraping/client.js";
 import { ExtractedPage, type LlmExtractor } from "../../src/llm/extract.js";
 import { HttpClient } from "../../src/collectors/http.js";
 import { DomainRateLimiter } from "../../src/utils/rate-limit.js";
@@ -97,6 +98,7 @@ export interface CtxOverrides {
   fetchImpl?: typeof fetch;
   http?: HttpClient;
   llm?: LlmExtractor;
+  scraping?: ScraplingClient | null;
   limit?: number;
   config?: Record<string, unknown>;
   geo?: string;
@@ -122,6 +124,7 @@ export function makeCtx(overrides: CtxOverrides = {}): CollectContext {
     enablePlaywright: overrides.enablePlaywright ?? false,
     http,
     llm: overrides.llm ?? fakeExtractor(),
+    ...(overrides.scraping !== undefined ? { scraping: overrides.scraping } : {}),
     signal: new AbortController().signal,
     log: pino({ level: "silent" }),
     config: overrides.config ?? {},

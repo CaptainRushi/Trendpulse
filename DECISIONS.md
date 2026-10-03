@@ -413,3 +413,13 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Live end-to-end (blocked):** `run:once` collects 5 real HN items, fails at `persist_raw` (no sheet). Doctor: node/env/sqlite ok; HN/Trends/GitHub/Wikipedia ping ok; reddit 403 WARN (expected); Jev `jev-latest` sample ok; OmniRoute FAIL (gateway down). Still unverifiable without a sheet: raw/sorted/digest/runs_log rows, rerun-≈0, wrong-key fallback run, dashboard run-now.
 - **Secrets check:** Jev + OmniRoute keys appear in zero repo files outside `.env` (code, docs, logs, reports, both sqlite DBs clean); no service-account key file exists to leak; API masking covered by API-11/SEC-06 tests (green).
 - **Cuts confirmed Day-1:** STY-03, JEV-03 (fixture-gated), full kill-resume/chaos, Scrapling sidecar. See NEXT.md for Day 2 order.
+
+## 2026-10-03 — Stretch S1 scrapling-lite sidecar (ponytail full)
+
+- **Decision:** Built per the prompt text; `docs/09_SCRAPLING_INTEGRATION.md` does not exist in `docs/` or the zip, so §§1-5/11 could not be read — the S1 prompt itself was sufficient.
+- **Install log:** Python 3.13.7, `scrapling==0.4.15` (metadata says `>=3.10`). Scrapling under-declares deps: also installed `curl_cffi`, `playwright`/`patchright`, `browserforge`, `msgspec` (all import-time required). No browser download needed. Pinned in `scrapling-service/requirements.txt`; venv is gitignored.
+- **Gotcha:** `DynamicFetcher.configure(headless=...)` raises `ValueError` (parser args only) — session args go to the constructor. Cost one debug cycle (SCR-03).
+- **Decision:** `SCRAPLING_ALLOW_IPS` exact-IP test holes (default deny) so fixture servers on loopback are fetchable; never set in production. The webpage collector delegates gating to the sidecar and guards only its native fallback path.
+- **Decision:** `SCRAPLING_ENABLED=false` default (opt-in); supervisor boot never blocks on a dead sidecar; webpage degrades per-page, never throws.
+- **Live timings (httpbin.org/html):** http 3741 bytes in 2342ms; browser 3716 bytes in 2440ms. en.wikipedia.org/wiki/Web_scraping → HTTP 403 → correctly BLOCKED per policy.
+- **Tests:** SCR-01/02/03/04/10/14/18 + supervisor circuit + COL-07 (13 tests, real sidecar + fixture site). Server suite 435/435.

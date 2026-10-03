@@ -8,6 +8,7 @@ import type { Logger } from "pino";
 import { SourceKey } from "../sheets/schema.js";
 import type { HttpClient } from "./http.js";
 import type { LlmExtractor } from "../llm/extract.js";
+import type { ScraplingClient } from "../scraping/client.js";
 
 export const RawItemDraft = z.object({
   source: SourceKey,
@@ -56,6 +57,8 @@ export interface CollectContext {
   enablePlaywright: boolean;
   http: HttpClient;
   llm: LlmExtractor;
+  /** Sidecar client when the supervisor is up (webpage collector only). */
+  scraping?: ScraplingClient | null;
   signal: AbortSignal;
   log: Logger;
   /** This source's config_json (validated per collector). */
