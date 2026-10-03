@@ -423,3 +423,13 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** `SCRAPLING_ENABLED=false` default (opt-in); supervisor boot never blocks on a dead sidecar; webpage degrades per-page, never throws.
 - **Live timings (httpbin.org/html):** http 3741 bytes in 2342ms; browser 3716 bytes in 2440ms. en.wikipedia.org/wiki/Web_scraping → HTTP 403 → correctly BLOCKED per policy.
 - **Tests:** SCR-01/02/03/04/10/14/18 + supervisor circuit + COL-07 (13 tests, real sidecar + fixture site). Server suite 435/435.
+
+## 2026-10-03 — Fix pass R0 baseline (ponytail full)
+
+- **Env:** sha cfc7b24, Node v26.4.0, npm 9.9.4, Windows 11. Baseline green: lint 0, typecheck 0, server 435/435, web 22/22, audit 0 vulns. Full log: test-runs/baseline-2026-10-03.txt.
+- **Deviations:** docs/14_FIX_PASS_PROMPT.md does not exist (prompt text came from chat; treating it as §0-1). `tools/check_docs_wiring.py` missing — checker lives at repo-root check_docs_wiring.py (R8: copy or note). `npm run dev:fake`, `npm run seed:test`, `scripts/chaos/`, TRIAGE.md all missing (scheduled R1/R2/R5/R6; INF-07). `docs/` itself exists. Tag day1 exists.
+- **Assumption verified:** verify-report.json on disk is a stale live-mode run, not current fake state.
+- **Assumption NOT verified:** 9 failed runs triaged as ENV (8× missing key file pre-fix, 1× OmniRoute fetch fail) + 1 interrupted of unknown origin; R2 writes TRIAGE.md and confirms no CODE cause.
+- **Security:** user pasted the service-account key in chat → file saved to secrets/service-account.json, stray repo-root copy trace-dev-*.json deleted; key must be rotated (told user). GOOGLE_SHEET_ID set from user URL; sheets:init 403 → sheet not yet shared (user action). Key path in .env is ../secrets/service-account.json because workspace scripts run with CWD=server/.
+- **Gotcha:** `verify` fake mode spawns `npx vitest` per row → >3 min for 4 rows on Windows (FND-03, fixed in R1 with in-process runner + process.execPath).
+- **Engines:** package.json says node >=20; running 26.4.0 here. Node 20/22 compat noted but not tested in this pass (no other runtimes on machine).
