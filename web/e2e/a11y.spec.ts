@@ -27,14 +27,22 @@ test("a11y: Runs and Settings have no serious violations", async ({ page }) => {
   await expectNoSeriousViolations(page, "/settings");
 });
 
-test("responsive: bottom tabs at 375px, sidebar at 1280px", async ({ page }) => {
+test("responsive: bar scrolls at 375px, full bar at 1280px, never sideways", async ({ page }) => {
   await mockApi(page);
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto("/");
-  await expect(page.getByRole("navigation", { name: "Primary" })).toBeHidden();
-  await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+  await expect(page.getByText("trendpulse").first()).toBeVisible();
+  let overflow = await page.evaluate(
+    () => (document.scrollingElement?.scrollWidth ?? 0) - window.innerWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+  overflow = await page.evaluate(
+    () => (document.scrollingElement?.scrollWidth ?? 0) - window.innerWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
 });

@@ -202,6 +202,7 @@ export const Day1Routes = [
   "GET /api/runs",
   "GET /api/runs/:id",
   "POST /api/runs",
+  "POST /api/runs/:id/retry",
   "GET /api/runs/:id/stream",
   "GET /api/settings",
   "PUT /api/settings",

@@ -1,164 +1,364 @@
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useDigest, useSources, useTopicEvidence, useTrends } from "../hooks/useApi";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import type { RawItem, SortedTopic } from "../lib/api";
+import {
+  useDates,
+  useDigest,
+  useHealth,
+  useRun,
+  useRuns,
+  useSyncSheets,
+  useTopicEvidence,
+  useTrends,
+} from "../hooks/useApi";
 import { useTopicFilters } from "../hooks/useFilters";
-import type { SortedTopic } from "../lib/api";
+import { copyToClipboard } from "../lib/clipboard";
 import { todayAppDate } from "../lib/format";
 import { useToast } from "../components/Toast";
-import { DigestCard } from "../components/DigestCard";
-import { FilterBar } from "../components/FilterBar";
-import { EmptyState, ErrorState, SkeletonGrid } from "../components/States";
-import { TopicCard } from "../components/TopicCard";
-import { TopicDrawer } from "../components/TopicDrawer";
+import { ErrorState, SkeletonGrid } from "../components/States";
+import {
+  Block,
+  BlockGrid,
+  EmptyNudge,
+  Eyebrow,
+  FlowStrip,
+  Hero,
+  Hl,
+  Pill,
+  SidePanel,
+  Step,
+  Steps,
+} from "../components/decode";
 
-/**
- * Today (§5.1): digest + filters + topic cards + drawer. Answer first —
- * the ranked list renders with zero clicks. Keyboard: j/k move, Enter
- * opens, / focuses search.
- */
+/** Grouped flow for the recipe bar: pull → clean → jev sorts → write → rank. */
+function groupedFlow(stages: { stage: string; status: string }[]): {
+  key: string;
+  label: string;
+  status: "pending" | "running" | "done" | "failed" | "skipped";
+  jev?: boolean;
+}[] {
+  const byStage = new Map(stages.map((s) => [s.stage, s.status]));
+  const rank = (list: string[]): "pending" | "running" | "done" | "failed" | "skipped" => {
+    const states = list.map((s) => byStage.get(s) ?? "pending");
+    if (states.includes("failed")) return "failed";
+    if (states.includes("running")) return "running";
+    if (states.every((s) => s === "done" || s === "skipped")) return "done";
+    if (states.every((s) => s === "pending")) return "pending";
+    return "running";
+  };
+  return [
+    { key: "pull", label: "pull", status: rank(["collect"]) },
+    { key: "clean", label: "clean", status: rank(["normalize", "dedupe", "persist_raw"]) },
+    { key: "jev", label: "jev sorts", status: rank(["sort_classify", "sort_cluster"]), jev: true },
+    { key: "write", label: "write", status: rank(["sort_write"]) },
+    { key: "rank", label: "rank", status: rank(["score", "persist_sorted", "finalize"]) },
+  ];
+}
+
+const CATEGORIES = ["Tech", "AI", "Business", "Finance", "Science", "Health", "Politics", "World", "Sports", "Entertainment", "Culture", "Gaming", "Lifestyle", "Other"];
+
+function useJevSpend(): number | null {
+  const query = useQuery({
+    queryKey: ["jev-health"],
+    queryFn: () => api.get<{ budget_used_usd: number }>("/api/jev/health"),
+    staleTime: 60_000,
+    retry: false,
+  });
+  return typeof query.data?.budget_used_usd === "number" ? query.data.budget_used_usd : null;
+}
+
 export function Today(): React.JSX.Element {
-  const [searchParams] = useSearchParams();
-  const date = searchParams.get("date") ?? todayAppDate();
+  const [params, setParams] = useSearchParams();
+  const date = params.get("date") ?? todayAppDate();
   const [filters, updateFilters, clearFilters] = useTopicFilters();
-  const [openTopic, setOpenTopic] = useState<SortedTopic | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const toast = useToast();
+  const [openId, setOpenId] = useState<string | null>(null);
 
+  const health = useHealth();
   const trends = useTrends({
     date,
     category: filters.category,
-    source: filters.source,
-    momentum: filters.momentum,
+    source: [],
+    momentum: [],
     sort: filters.sort,
     limit: 50,
     offset: 0,
     ...(filters.q ? { q: filters.q } : {}),
-    ...(filters.minScore !== undefined ? { minScore: filters.minScore } : {}),
   });
   const digest = useDigest(date);
-  const sources = useSources();
-  const evidence = useTopicEvidence(openTopic?.topic_id ?? null);
+  const dates = useDates();
+  const runs = useRuns(1, 0);
+  const latestRunId = runs.data?.runs[0]?.run_id ?? null;
+  const latest = useRun(latestRunId);
+  const evidence = useTopicEvidence(openId);
+  const spend = useJevSpend();
+  const sync = useSyncSheets();
+  const toast = useToast();
+
+  if (health.data && !health.data.setup_complete) {
+    return (
+      <div className="page">
+        <Hero eyebrow="setup" title={<>decode the day in <Hl>one picture</Hl>.</>} lede="four steps, then your first run." />
+        <section aria-label="Setup checklist">
+          <Steps>
+            <Step index={0} title="connect google sheets">
+              <p>create a sheet, share it with the service account, paste the id.</p>
+              <Link className="btn btn-ghost" to="/settings">open settings</Link>
+            </Step>
+            <Step index={1} title="connect omniroute">
+              <p>the writer behind topic cards. test it, note the model id.</p>
+              <Link className="btn btn-ghost" to="/settings">open settings</Link>
+            </Step>
+            <Step index={2} title="connect jev">
+              <p>the typed classifier. one sample classification proves the key.</p>
+              <Link className="btn btn-ghost" to="/settings">open settings</Link>
+            </Step>
+            <Step index={3} title="run once">
+              <p>pulls, sorts and ranks. watch it live on the runs page.</p>
+              <Link className="btn btn-primary" to="/wizard">start the wizard</Link>
+            </Step>
+          </Steps>
+        </section>
+      </div>
+    );
+  }
+
+  const goDate = (next: string): void => {
+    const nextParams = new URLSearchParams(params);
+    nextParams.set("date", next);
+    setParams(nextParams, { replace: true });
+  };
 
   const items = trends.data?.items ?? [];
-  const filterKey = [date, filters.q, filters.category.join(","), filters.source.join(","), filters.momentum.join(","), filters.minScore ?? "", filters.sort].join("|");
-
-  const selectNeighbor = useCallback(
-    (direction: 1 | -1) => {
-      if (items.length === 0) return;
-      const index = items.findIndex((item) => item.topic_id === selectedId);
-      const next = items[(index + direction + items.length) % items.length];
-      if (next) {
-        setSelectedId(next.topic_id);
-        document
-          .querySelector(`[data-topic-id="${next.topic_id}"]`)
-          ?.scrollIntoView({ block: "nearest" });
-      }
-    },
-    [items, selectedId],
-  );
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target &&
-        (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA");
-      if (event.key === "/" && !typing) {
-        event.preventDefault();
-        document.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
-        return;
-      }
-      if (typing || openTopic) return;
-      if (event.key === "j") selectNeighbor(1);
-      else if (event.key === "k") selectNeighbor(-1);
-      else if (event.key === "Enter" && selectedId) {
-        const found = items.find((item) => item.topic_id === selectedId);
-        if (found) setOpenTopic(found);
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [items, openTopic, selectNeighbor, selectedId]);
-
-  useEffect(() => {
-    setSelectedId(null);
-    setOpenTopic(null);
-    // Reset selection whenever the result set identity changes (filterKey).
-  }, [filterKey]);
-
-  const hasActiveFilters =
-    filters.q !== "" || filters.category.length > 0 || filters.source.length > 0 || filters.momentum.length > 0 || filters.minScore !== undefined;
+  const openTopic: SortedTopic | null = items.find((t) => t.topic_id === openId) ?? null;
+  const stale = (trends.data?.cache.age_s ?? 0) > 300;
 
   return (
     <div className="page">
-      {digest.data ? <DigestCard digest={digest.data} /> : null}
-      {trends.data ? (
-        <span className="badge" aria-label="Run summary">
-          {trends.data.total} topics · updated {trends.data.cache.age_s}s ago
-        </span>
-      ) : null}
-      <FilterBar
-        filters={filters}
-        onChange={updateFilters}
-        onClear={clearFilters}
-        sources={(sources.data ?? []).map((s) => ({ key: s.key, label: s.label }))}
-      />
-      {trends.isPending ? <SkeletonGrid /> : null}
-      {trends.isError ? (
-        <ErrorState
-          error={trends.error}
-          onRetry={() => {
-            void trends.refetch().catch(() => {
-              toast({ tone: "bad", message: "Retry failed." });
-            });
-          }}
+      <section aria-label="Today's trends" style={{ marginTop: 32 }}>
+        <Hero
+          eyebrow="today's trends"
+          title={<>the topics worth <Hl>posting about</Hl> today.</>}
+          lede={digest.data?.digest ?? "one line from the writer lands here after the first run."}
         />
-      ) : null}
-      {trends.data && trends.data.items.length === 0 ? (
-        hasActiveFilters ? (
-          <EmptyState
-            title="No topics match"
-            hint="Try widening the filters."
-            action={
-              <button type="button" className="btn btn-ghost" onClick={clearFilters}>
-                Clear filters
-              </button>
-            }
+      </section>
+
+      <section aria-label="Run summary">
+        <BlockGrid>
+          <Block variant="dark" value={digest.data?.topics_count ?? items.length} label="topics" />
+          <Block value={digest.data?.items_count ?? "—"} label="items" />
+          <Block
+            value={digest.data ? `${String(digest.data.sources_ok)}/${String(digest.data.sources_total)}` : "—"}
+            label="sources"
           />
-        ) : (
-          <EmptyState
-            title="No run yet"
-            hint="Run your first collection to see today's topics."
-            action={
-              <Link className="btn btn-primary" to="/runs">
-                Go to Runs
-              </Link>
-            }
-          />
-        )
+          <Block variant="lime" value={spend !== null ? `$${spend.toFixed(2)}` : "—"} label="ai cost" />
+        </BlockGrid>
+        {digest.data && digest.data.sources_ok < digest.data.sources_total ? (
+          <div className="banner banner-warn" role="status">
+            {digest.data.sources_ok} of {digest.data.sources_total} sources worked — the rest are flagged on the runs page.
+          </div>
+        ) : null}
+      </section>
+
+      {latest.data ? (
+        <section aria-label="Latest run stages">
+          <FlowStrip stages={groupedFlow(latest.data.stages)} />
+        </section>
       ) : null}
-      {trends.data && trends.data.items.length > 0 ? (
-        <div className="topic-grid">
-          {trends.data.items.map((topic) => (
-            <div key={topic.topic_id} data-topic-id={topic.topic_id}>
-              <TopicCard topic={topic} selected={topic.topic_id === selectedId} onOpen={setOpenTopic} />
-            </div>
+
+      <section aria-label="Filters">
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button type="button" aria-label="Previous day" className="btn btn-ghost" onClick={() => { goDate(prevDay(date)); }}>
+            ‹
+          </button>
+          <span className="mono" aria-label="Current date">{date}</span>
+          <button type="button" aria-label="Next day" className="btn btn-ghost" onClick={() => { goDate(nextDay(date)); }}>
+            ›
+          </button>
+          {dates.data ? <span className="form-hint">{dates.data.dates.length} days with data</span> : null}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }} role="group" aria-label="Category filter">
+          <button
+            type="button"
+            className="chip"
+            data-active={filters.category.length === 0 || undefined}
+            onClick={() => { updateFilters({ category: [] }); }}
+          >
+            all
+          </button>
+          {CATEGORIES.map((category) => (
+            <button
+              key={category}
+              type="button"
+              className="chip"
+              data-active={filters.category.includes(category) || undefined}
+              onClick={() => { updateFilters({ category: [category] }); }}
+            >
+              {category.toLowerCase()}
+            </button>
           ))}
         </div>
-      ) : null}
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <input
+            className="input"
+            type="search"
+            placeholder="search topics"
+            aria-label="Search topics"
+            value={filters.q}
+            onChange={(event) => { updateFilters({ q: event.target.value }); }}
+          />
+          <select
+            className="select"
+            aria-label="Sort topics"
+            value={filters.sort}
+            onChange={(event) => { updateFilters({ sort: event.target.value }); }}
+          >
+            <option value="score">score</option>
+            <option value="rank">rank</option>
+            <option value="title">title</option>
+          </select>
+          {filters.q || filters.category.length > 0 ? (
+            <button type="button" className="btn btn-ghost" onClick={clearFilters}>
+              clear filters
+            </button>
+          ) : null}
+        </div>
+        {trends.data ? (
+          <div className="stale-row">
+            <span>
+              {trends.data.total} topics · updated {trends.data.cache.age_s}s ago
+              {stale ? " · stale" : ""}
+            </span>
+            {stale ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={sync.isPending}
+                onClick={() => {
+                  sync.mutate(undefined, {
+                    onError: (error) => {
+                      toast({ tone: "bad", message: error.message });
+                    },
+                  });
+                }}
+              >
+                sync now
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
+      <section aria-label="Topics">
+        {trends.isPending ? <SkeletonGrid /> : null}
+        {trends.isError ? <ErrorState error={trends.error} onRetry={() => { void trends.refetch(); }} /> : null}
+        {trends.data && items.length === 0 ? (
+          <EmptyNudge
+            title="nothing here yet"
+            hint="run the pipeline and topics land in this list."
+            action={<Link className="btn btn-primary" to="/runs">go to runs</Link>}
+          />
+        ) : null}
+        {items.map((topic) => (
+          <button
+            key={topic.topic_id}
+            type="button"
+            className="topic-row"
+            onClick={() => { setOpenId(topic.topic_id); }}
+            aria-label={`Open ${topic.title}`}
+          >
+            <span className="topic-rank num">{topic.rank}</span>
+            <span>
+              <span className="topic-title">{topic.title}</span>
+              <br />
+              <span className="topic-summary">{topic.summary}</span>
+              <span className="topic-meta">
+                <Pill>{topic.category.toLowerCase()}</Pill>
+                <Pill>{topic.momentum}</Pill>
+                <span className="form-hint">{topic.source_count} {topic.source_count === 1 ? "source" : "sources"}</span>
+              </span>
+            </span>
+            <span className="topic-score num" aria-label={`Trend score ${String(topic.trend_score)}`}>
+              {topic.trend_score}
+            </span>
+          </button>
+        ))}
+      </section>
+
       {openTopic ? (
-        <TopicDrawer
+        <TopicPanel
           topic={openTopic}
           evidence={evidence.data?.evidence ?? []}
-          evidenceLoading={evidence.isPending}
-          onClose={() => {
-            setOpenTopic(null);
-          }}
+          onClose={() => { setOpenId(null); }}
         />
       ) : null}
     </div>
+  );
+}
+
+function prevDay(date: string): string {
+  return shiftDay(date, -1);
+}
+
+function nextDay(date: string): string {
+  return shiftDay(date, 1);
+}
+
+function shiftDay(date: string, delta: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(Date.UTC(y ?? 2026, (m ?? 1) - 1, d ?? 1));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
+}
+
+function TopicPanel({
+  topic,
+  evidence,
+  onClose,
+}: {
+  topic: SortedTopic;
+  evidence: RawItem[];
+  onClose: () => void;
+}): React.JSX.Element {
+  return (
+    <SidePanel title={topic.title} onClose={onClose}>
+      <Eyebrow>rank {topic.rank} · score {topic.trend_score}</Eyebrow>
+      <h2>{topic.title}</h2>
+      <p>{topic.summary}</p>
+      <div className="topic-meta">
+        <Pill>{topic.category.toLowerCase()}</Pill>
+        <Pill>{topic.momentum}</Pill>
+        <Pill>{topic.sentiment}</Pill>
+      </div>
+      <h3>score breakdown</h3>
+      <div className="score-parts">
+        <div><div className="v num">{topic.score_engagement.toFixed(2)}</div><div className="k">engagement</div></div>
+        <div><div className="v num">{topic.score_diversity.toFixed(2)}</div><div className="k">diversity</div></div>
+        <div><div className="v num">{topic.score_relevance.toFixed(2)}</div><div className="k">relevance</div></div>
+        <div><div className="v num">{topic.score_novelty.toFixed(2)}</div><div className="k">novelty</div></div>
+      </div>
+      <h3>why trending</h3>
+      <p>{topic.why_trending}</p>
+      <h3>content angles</h3>
+      {topic.content_angles.map((angle, index) => (
+        <div className="angle" key={index}>
+          <span>{angle}</span>
+          <button type="button" className="btn btn-ghost" aria-label={`Copy angle ${String(index + 1)}`} onClick={() => { copyToClipboard(angle); }}>
+            copy
+          </button>
+        </div>
+      ))}
+      <h3>evidence</h3>
+      {evidence.length === 0 ? <p className="form-hint">no linked items.</p> : null}
+      <ul className="evidence-list">
+        {evidence.map((item) => (
+          <li key={item.id}>
+            <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
+          </li>
+        ))}
+      </ul>
+    </SidePanel>
   );
 }

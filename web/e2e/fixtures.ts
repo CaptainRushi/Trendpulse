@@ -145,6 +145,9 @@ export async function mockApi(
     }),
   );
   await page.route("**/api/digest?*", (route) => route.fulfill({ json: DIGEST }));
+  await page.route("**/api/jev/health", (route) =>
+    route.fulfill({ json: { budget_used_usd: 0.31 } }),
+  );
   await page.route("**/api/sources", (route) => route.fulfill({ json: SOURCES }));
   await page.route("**/api/settings", (route) => route.fulfill({ json: { settings: {} } }));
   await page.route("**/api/sheets/link", (route) =>

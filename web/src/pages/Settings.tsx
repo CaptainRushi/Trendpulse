@@ -1,19 +1,30 @@
 import type React from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api.js";
 import type { SettingView } from "../lib/api.js";
 import { useSettings } from "../hooks/useApi.js";
-import { useTheme } from "../hooks/useTheme.js";
 import { useToast } from "../components/Toast.js";
 import { ErrorState, SkeletonGrid } from "../components/States.js";
+import { Pill, Step, Steps } from "../components/decode.js";
 
-const TABS = ["Connections", "Schedule", "Sorting", "Data", "Appearance", "Security"] as const;
-
-/** Settings (§5.7): tabbed forms over the settings API + probe buttons. */
+/**
+ * Settings (docs/11 §4.4): Steps rows for sheets, omniroute, jev,
+ * schedule, niches. Connection tests gate the saves below them —
+ * nothing is saved until its connection proves itself.
+ */
 export function Settings(): React.JSX.Element {
   const settings = useSettings();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Connections");
+  const [passed, setPassed] = useState<Record<string, boolean>>({});
+  const markSheets = useCallback((ok: boolean) => {
+    setPassed((prev) => ({ ...prev, sheets: ok }));
+  }, []);
+  const markOmni = useCallback((ok: boolean) => {
+    setPassed((prev) => ({ ...prev, omniroute: ok }));
+  }, []);
+  const markJev = useCallback((ok: boolean) => {
+    setPassed((prev) => ({ ...prev, jev: ok }));
+  }, []);
 
   if (settings.isPending) {
     return (
@@ -29,57 +40,228 @@ export function Settings(): React.JSX.Element {
       </div>
     );
   }
+  const view = settings.data.settings;
+
   return (
     <div className="page">
-      <h1 style={{ margin: 0 }}>Settings</h1>
-      <div role="tablist" aria-label="Settings sections" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {TABS.map((name) => (
-          <button
-            key={name}
-            type="button"
-            role="tab"
-            aria-selected={tab === name}
-            className="chip"
-            data-active={tab === name || undefined}
-            onClick={() => {
-              setTab(name);
-            }}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-      {tab === "Connections" ? <Connections /> : null}
-      {tab === "Schedule" ? <Schedule /> : null}
-      {tab === "Sorting" ? <Sorting /> : null}
-      {tab === "Data" ? <DataTab /> : null}
-      {tab === "Appearance" ? <Appearance /> : null}
-      {tab === "Security" ? <Security /> : null}
+      <section aria-label="Settings" style={{ marginTop: 32 }}>
+        <p className="eyebrow">settings</p>
+        <h1>connections first.</h1>
+        <p className="reading">secrets live in .env and never leave the server — the ui only shows whether each one is set.</p>
+      </section>
+      <section aria-label="Setup steps">
+        <Steps>
+          <Step index={0} title="google sheets">
+            <SecretState view={view} settingKey="google_service_account" label="service account" />
+            <SecretState view={view} settingKey="sheet_id" label="sheet id" />
+            <SheetsTest onResult={markSheets} />
+          </Step>
+          <Step index={1} title="omniroute">
+            <SecretState view={view} settingKey="omniroute_api_key" label="api key" />
+            <OmniTest onResult={markOmni} />
+          </Step>
+          <Step index={2} title="jev">
+            <SecretState view={view} settingKey="jev_api_key" label="api key" />
+            <JevTest onResult={markJev} />
+          </Step>
+          <Step index={3} title="schedule">
+            <ScheduleRow canSave={passed["sheets"] === true} />
+          </Step>
+          <Step index={4} title="niches">
+            <NichesRow canSave={passed["jev"] === true} />
+          </Step>
+        </Steps>
+      </section>
     </div>
   );
 }
 
-function settingValue(view: Record<string, SettingView>, key: string): unknown {
-  const entry: SettingView | undefined = view[key];
-  return entry?.value;
+function SecretState({ view, settingKey, label }: { view: Record<string, SettingView>; settingKey: string; label: string }): React.JSX.Element {
+  const entry = view[settingKey];
+  const isSet = entry?.is_set === true;
+  return (
+    <p>
+      {label}:{" "}
+      <Pill tone={isSet ? "good" : undefined}>
+        {isSet ? "•••• set" : "not set"}
+      </Pill>{" "}
+      <span className="form-hint">replace it in .env, then restart.</span>
+    </p>
+  );
 }
 
-function useSave(): {
-  save: (values: Record<string, unknown>, okMessage: string) => void;
+interface ProbeOk {
+  ok: boolean;
+  error?: string;
+  models?: string[];
+  model?: string;
+  choice?: string;
+  confidence?: number;
+  latency_ms?: number;
+  tabs?: string[];
+  service_account_email?: string;
+}
+
+function useProbe(path: string): {
+  run: (body: unknown) => void;
+  result: ProbeOk | null;
   pending: boolean;
 } {
+  const toast = useToast();
+  const [result, setResult] = useState<ProbeOk | null>(null);
+  const [pending, setPending] = useState(false);
+  return {
+    result,
+    pending,
+    run: (body: unknown) => {
+      setPending(true);
+      api
+        .post<ProbeOk>(path, body)
+        .then((res) => {
+          setResult(res);
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setResult({ ok: false, error: message });
+          toast({ tone: "bad", message });
+        })
+        .finally(() => {
+          setPending(false);
+        });
+    },
+  };
+}
+
+function ResultPill({ result }: { result: ProbeOk | null }): React.JSX.Element | null {
+  if (!result) return null;
+  if (!result.ok) return <Pill tone="bad">{result.error ?? "failed"}</Pill>;
+  const detail = result.models
+    ? result.models.slice(0, 3).join(", ")
+    : result.choice !== undefined
+      ? `${result.choice} ${(result.confidence ?? 0).toFixed(2)}`
+      : result.service_account_email ?? result.model ?? "ok";
+  return (
+    <Pill tone="good">
+      ok · {detail}
+      {result.latency_ms !== undefined ? ` · ${String(result.latency_ms)}ms` : ""}
+    </Pill>
+  );
+}
+
+function SheetsTest({ onResult }: { onResult: (ok: boolean) => void }): React.JSX.Element {
+  const probe = useProbe("/api/setup/test-sheets");
+  const [sheetId, setSheetId] = useState("");
+  return (
+    <div className="form-grid">
+      <div className="form-field">
+        <label htmlFor="set-sheet-id">sheet id</label>
+        <input id="set-sheet-id" className="input" value={sheetId} onChange={(e) => { setSheetId(e.target.value); }} placeholder="from the sheet url" />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ minHeight: 38 }}
+          disabled={probe.pending}
+          onClick={() => {
+            probe.run({ sheet_id: sheetId || undefined });
+          }}
+        >
+          test connection
+        </button>
+        <ResultPill result={probe.result} />
+      </div>
+      {probe.result ? (
+        <ProbeWatcher result={probe.result} onResult={onResult} />
+      ) : null}
+    </div>
+  );
+}
+
+function OmniTest({ onResult }: { onResult: (ok: boolean) => void }): React.JSX.Element {
+  const probe = useProbe("/api/setup/test-omniroute");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  return (
+    <div className="form-grid">
+      <div className="form-field">
+        <label htmlFor="set-omni-url">base url</label>
+        <input id="set-omni-url" className="input" value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); }} placeholder="http://localhost:20128/v1" />
+      </div>
+      <div className="form-field">
+        <label htmlFor="set-omni-key">api key</label>
+        <input id="set-omni-key" className="input" type="password" autoComplete="off" value={apiKey} onChange={(e) => { setApiKey(e.target.value); }} />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ minHeight: 38 }}
+          disabled={probe.pending}
+          onClick={() => {
+            probe.run({ base_url: baseUrl, api_key: apiKey || undefined });
+          }}
+        >
+          test connection
+        </button>
+        <ResultPill result={probe.result} />
+      </div>
+      {probe.result ? <ProbeWatcher result={probe.result} onResult={onResult} /> : null}
+    </div>
+  );
+}
+
+function JevTest({ onResult }: { onResult: (ok: boolean) => void }): React.JSX.Element {
+  const probe = useProbe("/api/setup/test-jev");
+  const [model, setModel] = useState("");
+  return (
+    <div className="form-grid">
+      <div className="form-field">
+        <label htmlFor="set-jev-model">model</label>
+        <input id="set-jev-model" className="input mono" value={model} onChange={(e) => { setModel(e.target.value); }} placeholder="jev-latest" />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ minHeight: 38 }}
+          disabled={probe.pending}
+          onClick={() => {
+            probe.run({ model });
+          }}
+        >
+          test connection
+        </button>
+        <ResultPill result={probe.result} />
+      </div>
+      {probe.result ? <ProbeWatcher result={probe.result} onResult={onResult} /> : null}
+      <span className="form-hint">runs one sample classification with the configured endpoint and key.</span>
+    </div>
+  );
+}
+
+/** Reports each settled probe via effect (never setState during render). */
+function ProbeWatcher({ result, onResult }: { result: ProbeOk; onResult: (ok: boolean) => void }): null {
+  const ok = result.ok;
+  useEffect(() => {
+    onResult(ok);
+  }, [ok, onResult]);
+  return null;
+}
+
+function useSave(): { save: (values: Record<string, unknown>) => void; pending: boolean } {
   const toast = useToast();
   const client = useQueryClient();
   const [pending, setPending] = useState(false);
   return {
     pending,
-    save: (values, okMessage) => {
+    save: (values) => {
       setPending(true);
       api
         .put("/api/settings", values)
         .then(() => {
           void client.invalidateQueries({ queryKey: ["settings"] });
-          toast({ tone: "good", message: okMessage });
+          toast({ tone: "good", message: "saved." });
         })
         .catch((error: unknown) => {
           toast({ tone: "bad", message: error instanceof Error ? error.message : String(error) });
@@ -91,338 +273,56 @@ function useSave(): {
   };
 }
 
-function Connections(): React.JSX.Element {
-  const settings = useSettings();
-  const toast = useToast();
-  const [sheets, setSheets] = useState({ sheet_id: "", service_account_json: "" });
-  const [omni, setOmni] = useState({ base_url: "", api_key: "" });
-  const [jev, setJev] = useState({ base_url: "", api_key: "", model: "" });
-  const [result, setResult] = useState("");
-
-  const test = (label: string, path: string, body: unknown): void => {
-    setResult(`${label}: testing…`);
-    api
-      .post<{ ok: boolean; error?: string; models?: string[]; model?: string }>(path, body)
-      .then((res) => {
-        setResult(
-          res.ok
-            ? `${label}: ok${res.models ? ` (${res.models.join(", ")})` : ""}${res.model ? ` (${res.model})` : ""}`
-            : `${label}: ${res.error ?? "failed"}`,
-        );
-        toast({
-          tone: res.ok ? "good" : "bad",
-          message: res.ok ? `${label} works.` : (res.error ?? `${label} failed.`),
-        });
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        setResult(`${label}: ${message}`);
-        toast({ tone: "bad", message });
-      });
-  };
-
-  const view = settings.data?.settings ?? {};
-  const secret = (key: string): string => {
-    const entry = view[key];
-    if (entry && typeof entry === "object" && "is_set" in entry) {
-      return (entry as { is_set: boolean }).is_set ? "set" : "not set";
-    }
-    return "not set";
-  };
-
-  return (
-    <>
-      <section className="card" aria-label="Google Sheets connection">
-        <strong>Google Sheets</strong>
-        <span className="badge">service account: {secret("google_service_account")}</span>
-        <div className="form-grid">
-          <div className="form-field">
-            <label htmlFor="conn-sheet-id">Sheet ID</label>
-            <input id="conn-sheet-id" className="input" value={sheets.sheet_id} onChange={(e) => {
-              setSheets({ ...sheets, sheet_id: e.target.value });
-            }} placeholder="From settings or paste here" />
-          </div>
-          <div className="form-field">
-            <label htmlFor="conn-sa">Service account JSON (optional override)</label>
-            <textarea id="conn-sa" className="input" rows={3} value={sheets.service_account_json} onChange={(e) => {
-              setSheets({ ...sheets, service_account_json: e.target.value });
-            }} placeholder="Paste key JSON to test without saving" />
-          </div>
-          <div>
-            <button type="button" className="btn btn-ghost" onClick={() => {
-              test("Sheets", "/api/setup/test-sheets", { sheet_id: sheets.sheet_id || undefined, ...(sheets.service_account_json ? { service_account_json: sheets.service_account_json } : {}) });
-            }}>
-              Test &amp; create tabs
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="card" aria-label="OmniRoute connection">
-        <strong>OmniRoute</strong>
-        <span className="badge">api key: {secret("omniroute_api_key")}</span>
-        <div className="form-grid">
-          <div className="form-field">
-            <label htmlFor="conn-omni-url">Base URL</label>
-            <input id="conn-omni-url" className="input" value={omni.base_url} onChange={(e) => {
-              setOmni({ ...omni, base_url: e.target.value });
-            }} placeholder="http://localhost:20128/v1" />
-          </div>
-          <div className="form-field">
-            <label htmlFor="conn-omni-key">API key</label>
-            <input id="conn-omni-key" className="input" type="password" autoComplete="off" value={omni.api_key} onChange={(e) => { setOmni({ ...omni, api_key: e.target.value }); }} />
-          </div>
-          <div>
-            <button type="button" className="btn btn-ghost" onClick={() => {
-              test("OmniRoute", "/api/setup/test-omniroute", { base_url: omni.base_url, api_key: omni.api_key || undefined });
-            }}>
-              Test
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="card" aria-label="Jev connection">
-        <strong>Jev</strong>
-        <div className="form-grid">
-          <div className="form-field">
-            <label htmlFor="conn-jev-url">Base URL (empty = ride OmniRoute)</label>
-            <input id="conn-jev-url" className="input" value={jev.base_url} onChange={(e) => { setJev({ ...jev, base_url: e.target.value }); }} />
-          </div>
-          <div className="form-field">
-            <label htmlFor="conn-jev-model">Model</label>
-            <input
-              id="conn-jev-model"
-              className="input"
-              value={jev.model}
-              onChange={(e) => { setJev({ ...jev, model: e.target.value }); }}
-            />
-          </div>
-          <div className="form-field">
-            <label htmlFor="conn-jev-key">API key</label>
-            <input id="conn-jev-key" className="input" type="password" autoComplete="off" value={jev.api_key} onChange={(e) => { setJev({ ...jev, api_key: e.target.value }); }} />
-          </div>
-          <div>
-            <button type="button" className="btn btn-ghost" onClick={() => {
-              test("Jev", "/api/setup/test-jev", { base_url: jev.base_url || undefined, api_key: jev.api_key || undefined, model: jev.model });
-            }}>
-              Test with sample
-            </button>
-          </div>
-        </div>
-      </section>
-      <div className="badge" role="status">{result || "No test run yet."}</div>
-    </>
-  );
-}
-
-/** "0 6 * * *" → "Every day at 06:00"; anything else shown raw. */
-export function humanizeCron(cron: string): string {
-  const match = /^(\d+)\s+(\d+)\s+\*\s+\*\s+\*$/.exec(cron.trim());
-  if (match && match[1] !== undefined && match[2] !== undefined) {
-    return `Every day at ${match[2].padStart(2, "0")}:${match[1].padStart(2, "0")}`;
-  }
-  return cron;
-}
-
-function Schedule(): React.JSX.Element {
+function ScheduleRow({ canSave }: { canSave: boolean }): React.JSX.Element {
   const settings = useSettings();
   const { save, pending } = useSave();
   const view = settings.data?.settings ?? {};
-  const cronValue = settingValue(view, "schedule_cron");
-  const current = typeof cronValue === "string" ? cronValue : "0 6 * * *";
-  const [cron, setCron] = useState(current);
-  const [missed, setMissed] = useState<boolean | null>(null);
-  const rawMissed = settingValue(view, "run_missed_on_start");
-  const missedValue = missed ?? (typeof rawMissed === "boolean" ? rawMissed : true);
-
+  const current = view["schedule_cron"]?.value;
+  const [cron, setCron] = useState(typeof current === "string" ? current : "0 6 * * *");
   return (
-    <section className="card" aria-label="Schedule">
-      <div className="form-grid">
-        <div className="form-field">
-          <label htmlFor="sched-cron">Cron schedule</label>
-          <input id="sched-cron" className="input mono" value={cron} onChange={(e) => { setCron(e.target.value); }} />
-          <span className="form-hint">{humanizeCron(cron)} (hot-reloads the scheduler on save)</span>
-        </div>
-        <label>
-          <input type="checkbox" checked={missedValue} onChange={(e) => { setMissed(e.target.checked); }} /> Run missed on
-          start (catch up overnight gaps)
-        </label>
-        <div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={pending}
-            onClick={() => { save({ schedule_cron: cron, run_missed_on_start: missedValue }, "Schedule saved."); }}
-          >
-            Save schedule
-          </button>
-        </div>
+    <div className="form-grid">
+      <div className="form-field">
+        <label htmlFor="set-cron">cron schedule</label>
+        <input id="set-cron" className="input mono" value={cron} onChange={(e) => { setCron(e.target.value); }} />
+        <span className="form-hint">hot-reloads the scheduler on save.</span>
       </div>
-    </section>
+      <div>
+        <button type="button" className="btn btn-ghost" disabled={pending || !canSave} onClick={() => { save({ schedule_cron: cron }); }}>
+          save schedule
+        </button>
+        {!canSave ? <span className="form-hint"> pass the sheets test first.</span> : null}
+      </div>
+    </div>
   );
 }
 
-function Sorting(): React.JSX.Element {
+function NichesRow({ canSave }: { canSave: boolean }): React.JSX.Element {
   const settings = useSettings();
   const { save, pending } = useSave();
   const view = settings.data?.settings ?? {};
-  const num = (key: string, fallback: number): number => {
-    const value = settingValue(view, key);
-    return typeof value === "number" ? value : fallback;
-  };
-  const weightsValue = settingValue(view, "score_weights");
-  const weights =
-    typeof weightsValue === "object" && weightsValue !== null
-      ? (weightsValue as { engagement?: unknown; diversity?: unknown; relevance?: unknown; novelty?: unknown })
-      : undefined;
-  const percent = (part: unknown, fallback: number): number =>
-    typeof part === "number" ? Math.round(part * 100) : fallback;
-  const [batch, setBatch] = useState(num("sort_batch_size", 30));
-  const [topN, setTopN] = useState(num("top_n", 50));
-  const [parts, setParts] = useState({
-    engagement: percent(weights?.engagement, 35),
-    diversity: percent(weights?.diversity, 25),
-    relevance: percent(weights?.relevance, 25),
-    novelty: percent(weights?.novelty, 15),
-  });
-  const sum = parts.engagement + parts.diversity + parts.relevance + parts.novelty;
-
+  const current = view["niches"]?.value;
+  const initial = Array.isArray(current) ? current.filter((n): n is string => typeof n === "string").join(", ") : "";
+  const [text, setText] = useState(initial);
   return (
-    <section className="card" aria-label="Sorting">
-      <div className="form-grid">
-        <div className="form-field">
-          <label htmlFor="sort-batch">Batch size</label>
-          <input id="sort-batch" className="input" type="number" min={1} style={{ width: 120 }} value={batch} onChange={(e) => { setBatch(Number(e.target.value)); }} />
-        </div>
-        <div className="form-field">
-          <label htmlFor="sort-topn">Top N</label>
-          <input id="sort-topn" className="input" type="number" min={1} style={{ width: 120 }} value={topN} onChange={(e) => { setTopN(Number(e.target.value)); }} />
-        </div>
-        {(Object.keys(parts) as (keyof typeof parts)[]).map((key) => (
-          <div className="form-field" key={key}>
-            <label htmlFor={`w-${key}`}>
-              {key} ({parts[key]}%)
-            </label>
-            <input
-              id={`w-${key}`}
-              type="range"
-              min={0}
-              max={100}
-              value={parts[key]}
-              onChange={(e) => { setParts({ ...parts, [key]: Number(e.target.value) }); }}
-            />
-          </div>
-        ))}
-        <span className="badge">Weights sum to {sum}% — normalized on save.</span>
-        <div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={pending || sum <= 0}
-            onClick={() => {
-              save(
-                {
-                  sort_batch_size: batch,
-                  top_n: topN,
-                  score_weights: {
-                    engagement: parts.engagement / sum,
-                    diversity: parts.diversity / sum,
-                    relevance: parts.relevance / sum,
-                    novelty: parts.novelty / sum,
-                  },
-                },
-                "Sorting saved.",
-              );
-            }}
-          >
-            Save sorting
-          </button>
-        </div>
+    <div className="form-grid">
+      <div className="form-field">
+        <label htmlFor="set-niches">niches, comma-separated</label>
+        <input id="set-niches" className="input" value={text} onChange={(e) => { setText(e.target.value); }} />
+        <span className="form-hint">jev measures relevance against these.</span>
       </div>
-    </section>
-  );
-}
-
-function DataTab(): React.JSX.Element {
-  const settings = useSettings();
-  const { save, pending } = useSave();
-  const view = settings.data?.settings ?? {};
-  const num = (key: string, fallback: number): number => {
-    const value = settingValue(view, key);
-    return typeof value === "number" ? value : fallback;
-  };
-  const [retention, setRetention] = useState(num("retention_days", 30));
-  const [mode, setMode] = useState(settingValue(view, "retention_mode") === "delete" ? "delete" : "archive");
-  const [dedupe, setDedupe] = useState(num("dedupe_days", 3));
-
-  return (
-    <section className="card" aria-label="Data retention">
-      <div className="form-grid">
-        <div className="form-field">
-          <label htmlFor="data-retention">Retention days</label>
-          <input id="data-retention" className="input" type="number" min={1} style={{ width: 120 }} value={retention} onChange={(e) => { setRetention(Number(e.target.value)); }} />
-        </div>
-        <label>
-          Retention mode{" "}
-          <select className="select" aria-label="Retention mode" value={mode} onChange={(e) => { setMode(e.target.value); }}>
-            <option value="archive">archive</option>
-            <option value="delete">delete</option>
-          </select>
-        </label>
-        <div className="form-field">
-          <label htmlFor="data-dedupe">Dedupe days</label>
-          <input id="data-dedupe" className="input" type="number" min={0} style={{ width: 120 }} value={dedupe} onChange={(e) => { setDedupe(Number(e.target.value)); }} />
-        </div>
-        <div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={pending}
-            onClick={() => { save({ retention_days: retention, retention_mode: mode, dedupe_days: dedupe }, "Data settings saved."); }}
-          >
-            Save data settings
-          </button>
-        </div>
+      <div>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={pending || !canSave}
+          onClick={() => {
+            save({ niches: text.split(",").map((s) => s.trim()).filter((s) => s.length > 0) });
+          }}
+        >
+          save niches
+        </button>
+        {!canSave ? <span className="form-hint"> pass the jev test first.</span> : null}
       </div>
-    </section>
-  );
-}
-
-function Appearance(): React.JSX.Element {
-  const [theme, setTheme] = useTheme();
-  return (
-    <section className="card" aria-label="Appearance">
-      <strong>Theme</strong>
-      <div style={{ display: "flex", gap: 8 }}>
-        {(["dark", "light"] as const).map((name) => (
-          <button key={name} type="button" className="chip" aria-pressed={theme === name} onClick={() => { setTheme(name); }}>
-            {name}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Security(): React.JSX.Element {
-  const settings = useSettings();
-  const view = settings.data?.settings ?? {};
-  const isSet = (key: string): boolean => {
-    const entry: SettingView | undefined = view[key];
-    return entry !== undefined && entry.is_set;
-  };
-  return (
-    <section className="card" aria-label="Security">
-      <strong>Secrets live in the environment, never in this UI.</strong>
-      <p className="form-hint">Dashboard password is required when binding a non-localhost address.</p>
-      <ul>
-        {["dashboard_password", "omniroute_api_key", "jev_api_key", "google_service_account"].map((key) => (
-          <li key={key}>
-            <span className="mono">{key}</span>: {isSet(key) ? "set" : "not set"}
-          </li>
-        ))}
-      </ul>
-    </section>
+    </div>
   );
 }

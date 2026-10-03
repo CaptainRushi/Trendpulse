@@ -21,7 +21,9 @@ test("fresh DB walks the wizard to a first run", async ({ page }) => {
   await page.route("**/api/runs", (route) => route.fulfill({ json: { run_id: "run-first" } }));
 
   await page.goto("/");
-  await expect(page).toHaveURL(/\/wizard$/);
+  await expect(page.getByText("connect google sheets")).toBeVisible();
+
+  await page.goto("/wizard");
   await expect(page.getByText("Set up TrendPulse")).toBeVisible();
 
   // 1 → 2 → 3 → 4: each probe-gated step passes with mocked probes.
@@ -49,7 +51,7 @@ test("fresh DB walks the wizard to a first run", async ({ page }) => {
 
 test("wizard resumes mid-flow after a reload", async ({ page }) => {
   await mockApi(page, { setupComplete: false });
-  await page.goto("/");
+  await page.goto("/wizard");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByLabel("Google Sheets")).toBeVisible();
   await page.reload();

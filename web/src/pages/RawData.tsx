@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { useRaw, useSources } from "../hooks/useApi";
 import { todayAppDate } from "../lib/format";
 import { EmptyState, ErrorState, SkeletonGrid } from "../components/States";
-import { StatusPill } from "../components/badges";
+import { Pill } from "../components/decode";
 
 /**
  * Raw Data (§5.4): paginated server-side table (limit/offset) — no
@@ -107,7 +107,7 @@ export function RawData(): React.JSX.Element {
         <EmptyState title="No raw items" hint="Adjust the date or filters." />
       ) : null}
       {raw.data && raw.data.items.length > 0 ? (
-        <div className="card" style={{ overflowX: "auto" }}>
+        <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
@@ -130,7 +130,7 @@ export function RawData(): React.JSX.Element {
                   </td>
                   <td>{item.engagement_score ?? "—"}</td>
                   <td>
-                    <StatusPill status={item.sort_status ?? "unknown"} />
+                    <Pill>{item.sort_status ?? "unknown"}</Pill>
                   </td>
                 </tr>
               ))}
@@ -168,14 +168,14 @@ export function RawData(): React.JSX.Element {
         </div>
       ) : null}
 
-      {open ? (        <section className="card" aria-label="Raw item detail">
+      {open ? (        <section className="panel" aria-label="Raw item detail">
           <h2>{open.title}</h2>
           <p>{open.snippet || "No snippet."}</p>
-          <div className="topic-card-meta">
-            <span className="badge mono">{open.id}</span>
-            <span className="badge mono">hash {open.content_hash.slice(0, 12)}</span>
+          <div className="topic-meta">
+            <span className="form-hint mono">{open.id}</span>
+            <span className="form-hint mono">hash {open.content_hash.slice(0, 12)}</span>
             {open.merged_sources.length > 0 ? (
-              <span className="badge">merged: {open.merged_sources.join(", ")}</span>
+              <span className="form-hint">merged: {open.merged_sources.join(", ")}</span>
             ) : null}
           </div>
           <p>

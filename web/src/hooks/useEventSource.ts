@@ -39,14 +39,16 @@ export function useRunEvents(runId: string | null): EventSourceState {
           // Malformed frame — ignore, the next heartbeat follows.
         }
       };
-      // Custom event types arrive via listeners, not onmessage.
+      // Custom event types arrive via listeners, not onmessage. The event
+      // name is the type — data carries no `type` field (server sends
+      // {run_id, ...payload}), so close on the listener name, not the data.
       for (const type of ["stage", "source", "progress", "log", "done", "error"]) {
         source.addEventListener(type, ((event: Event) => {
           const message = event as MessageEvent<string>;
           try {
             const data = JSON.parse(message.data) as RunEvent;
             setEvents((prev) => [...prev.slice(-199), data]);
-            if (data.type === "done" || data.type === "error") source?.close();
+            if (type === "done" || type === "error") source?.close();
           } catch {
             // Ignore malformed frames.
           }

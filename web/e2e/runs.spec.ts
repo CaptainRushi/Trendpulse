@@ -48,7 +48,7 @@ test("run detail shows stages, sources and the live SSE log", async ({ page }) =
   );
 
   await page.goto("/runs/run-live");
-  await expect(page.getByText("Collect", { exact: true })).toBeVisible();
+  await expect(page.getByText("sort classify")).toBeVisible();
   await expect(page.getByRole("cell", { name: "hackernews" })).toBeVisible();
   const log = page.getByRole("log");
   await expect(log).toContainText("hackernews");

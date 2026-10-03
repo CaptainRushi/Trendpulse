@@ -1,61 +1,29 @@
-/* Design tokens — docs/03_UI_UX_DESIGN.md §4. Dark first, light supported. */
-:root,
-[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0b0f17;
-  --surface: #121826;
-  --surface-2: #182033;
-  --border: #26304a;
-  --text: #e7eaf3;
-  --text-dim: #98a2b8;
-  --brand: #6366f1;
-  /* Text-bearing fills (buttons, pressed chips): white-on-brand must clear
-     4.5:1 — #6366f1 only reaches 4.46 (axe). Same hue family, darker. */
-  --brand-strong: #4f46e5;
-  --good: #22c55e;
-  --warn: #f59e0b;
-  --bad: #ef4444;
-  --info: #38bdf8;
-}
-
-[data-theme="light"] {
+/* Decode design tokens — exact values from CLAUDE.md (docs/11 §4.1).
+ * Light only. --faint is decorative/disabled only (fails AA for text). */
+:root {
   color-scheme: light;
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --surface-2: #f0f2f6;
-  --border: #e2e6ee;
-  --text: #0f1626;
-  --text-dim: #5b6478;
-  --brand: #4f46e5;
-  --brand-strong: #4f46e5;
-  --good: #16a34a;
-  --warn: #d97706;
-  --bad: #dc2626;
-  --info: #0284c7;
-}
+  --bg: #F5F5F0;
+  --panel: #FFFFFF;
+  --line: #E2E2D9;
+  --line-2: #EEEEE7;
+  --ink: #121210;
+  --ink-2: #3B3B37;
+  --muted: #6F6F68;
+  --faint: #A6A69D;
+  --lime: #DCEB63;
+  --lime-ink: #2B3300;
+  --lime-bg: #F3F8D6;
+  --lime-deep: #5E6A1C;
+  --forest: #14291D;
+  --forest-ink: #E8F0D6;
+  --forest-muted: #9DB39F;
+  --violet: #7A6AD8;
+  --good: #2F7D3B;
+  --warn: #B7791F;
+  --bad: #B42318;
+  --info: #1F6FB2;
 
-/* Score ring bands (§4): 0–39 dim, 40–69 info, 70–84 brand, 85–100 good. */
-:root {
-  --score-low: var(--text-dim);
-  --score-mid: var(--info);
-  --score-high: var(--brand);
-  --score-top: var(--good);
-}
-
-/* Category hues (fixed per category; chip bg tints below in app.css). */
-:root {
-  --cat-tech: #60a5fa;
-  --cat-ai: #a78bfa;
-  --cat-business: #fbbf24;
-  --cat-finance: #34d399;
-  --cat-science: #22d3ee;
-  --cat-health: #fb7185;
-  --cat-politics: #94a3b8;
-  --cat-world: #2dd4bf;
-  --cat-sports: #fb923c;
-  --cat-entertainment: #f472b6;
-  --cat-culture: #e879f9;
-  --cat-gaming: #a3e635;
-  --cat-lifestyle: #e7c873;
-  --cat-other: #9ca3af;
+  --font-ui: "Geist", Inter, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --radius: 4px;
 }

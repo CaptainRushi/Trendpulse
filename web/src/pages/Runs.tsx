@@ -6,21 +6,9 @@ import { useRunEvents } from "../hooks/useEventSource.js";
 import { formatDateTime, formatDurationMs } from "../lib/format.js";
 import { useToast } from "../components/Toast.js";
 import { EmptyState, ErrorState, SkeletonGrid } from "../components/States.js";
-import { StatusPill } from "../components/badges.js";
+import { FlowStrip, Pill } from "../components/decode.js";
 
-const STAGE_LABELS: Record<string, string> = {
-  collect: "Collect",
-  normalize: "Normalize",
-  dedupe: "Dedupe",
-  engagement_norm: "Engagement",
-  persist_raw: "Persist raw",
-  sort_map: "Sort map",
-  sort_reduce: "Sort reduce",
-  score: "Score",
-  persist_sorted: "Persist sorted",
-  finalize: "Finalize",
-};
-const STAGE_ORDER = Object.keys(STAGE_LABELS);
+const STAGE_ORDER = ["collect", "normalize", "dedupe", "persist_raw", "sort_classify", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"];
 
 /**
  * Runs (§5.6): history list + detail (stage stepper, per-source table,
@@ -70,9 +58,9 @@ export function Runs(): React.JSX.Element {
               >
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <span className="mono">{run.run_date}</span>
-                  <StatusPill status={run.status} />
+                  <Pill tone={run.status === "success" ? "good" : run.status === "failed" ? "bad" : run.status === "running" || run.status === "partial" ? "info" : undefined}>{run.status}</Pill>
                 </div>
-                <div className="badge">
+                <div className="form-hint">
                   {run.trigger} · {run.items_collected} items · {run.topics_count} topics
                 </div>
               </button>
@@ -84,15 +72,15 @@ export function Runs(): React.JSX.Element {
             {detail.isError ? <ErrorState error={detail.error} /> : null}
             {detail.data ? <RunDetailView runId={selectedId ?? ""} /> : null}
             {selectedId ? (
-              <section className="card" aria-label="Live log">
+              <section className="panel" aria-label="Live log">
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <strong>Live log</strong>
-                  <span className="badge" aria-label={live.connected ? "Stream connected" : "Stream disconnected"}>
-                    {live.connected ? "● connected" : "○ disconnected"}
-                  </span>
+                  <strong>live log</strong>
+                  <Pill tone={live.connected ? "good" : undefined} label={live.connected ? "Stream connected" : "Stream disconnected"}>
+                    {live.connected ? "connected" : "disconnected"}
+                  </Pill>
                 </div>
                 <div className="log-viewer" role="log" aria-live="polite" aria-label="Run events">
-                  {live.events.length === 0 ? "No events yet." : null}
+                  {live.events.length === 0 ? "no events yet." : null}
                   {live.events.map((event, index) => (
                     <div key={index}>
                       [{event.type}] {JSON.stringify(event.data ?? event)}
@@ -129,8 +117,8 @@ export function Runs(): React.JSX.Element {
                   className="btn btn-ghost"
                   disabled={startResort.isPending}
                   onClick={() => {
-                    startResort.mutate(
-                      { stages: ["sort_map", "sort_reduce", "score", "persist_sorted", "finalize"], date: detail.data.run.run_date },
+                      startResort.mutate(
+                        { stages: ["sort_classify", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"], date: detail.data.run.run_date },
                       {
                         onSuccess: () => {
                           toast({ tone: "good", message: "Re-sort started." });
@@ -160,27 +148,28 @@ function RunDetailView({ runId }: { runId: string }): React.JSX.Element {
   const byStage = new Map(stages.map((s) => [s.stage, s.status]));
   return (
     <>
-      <section className="card" aria-label="Run summary">
+      <section className="panel" aria-label="Run summary">
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <span className="mono">{run.run_id.slice(0, 8)}</span>
-          <StatusPill status={run.status} />
-          <span className="badge">
+          <Pill tone={run.status === "success" ? "good" : run.status === "failed" ? "bad" : run.status === "running" || run.status === "partial" ? "info" : undefined}>{run.status}</Pill>
+          <span className="form-hint">
             {run.items_collected} collected · {run.items_new} new · {run.topics_count} topics ·{" "}
-            {llm.calls} LLM calls
+            {llm.calls} llm calls
           </span>
         </div>
         {run.error ? <p role="alert">{run.error}</p> : null}
       </section>
-      <section className="card" aria-label="Stages">
-        <ol className="stepper">
-          {STAGE_ORDER.map((stage) => (
-            <li key={stage} data-status={byStage.get(stage) ?? "pending"}>
-              {STAGE_LABELS[stage] ?? stage}
-            </li>
-          ))}
-        </ol>
+      <section className="panel" aria-label="Stages">
+        <FlowStrip
+          stages={STAGE_ORDER.map((stage) => ({
+            key: stage,
+            label: stage.replace("_", " "),
+            status: (byStage.get(stage) ?? "pending") as "pending" | "running" | "done" | "failed" | "skipped",
+            jev: stage === "sort_classify" || stage === "sort_cluster",
+          }))}
+        />
       </section>
-      <section className="card" aria-label="Per-source results" style={{ overflowX: "auto" }}>
+      <section className="table-wrap" aria-label="Per-source results">
         <table className="data-table">
           <thead>
             <tr>
@@ -195,7 +184,7 @@ function RunDetailView({ runId }: { runId: string }): React.JSX.Element {
             {stats.map((stat) => (
               <tr key={stat.source}>
                 <td>{stat.source}</td>
-                <td><StatusPill status={stat.status} /></td>
+                <td><Pill tone={stat.status === "ok" ? "good" : stat.status === "error" ? "bad" : undefined}>{stat.status}</Pill></td>
                 <td>{stat.items}</td>
                 <td>{formatDurationMs(stat.duration_ms)}</td>
                 <td>{stat.error ?? "—"}</td>
@@ -204,7 +193,7 @@ function RunDetailView({ runId }: { runId: string }): React.JSX.Element {
           </tbody>
         </table>
       </section>
-      <span className="badge">Started {formatDateTime(run.started_at)}</span>
+      <span className="form-hint">started {formatDateTime(run.started_at)}</span>
     </>
   );
 }

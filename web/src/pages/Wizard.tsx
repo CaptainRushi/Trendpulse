@@ -189,7 +189,7 @@ export function Wizard(): React.JSX.Element {
                 Test &amp; create tabs
               </button>
             </div>
-            <div className="badge" role="status">{probeMessage || "Not tested yet."}</div>
+            <div className="form-hint" role="status">{probeMessage || "Not tested yet."}</div>
           </div>
         </section>
       ) : null}
@@ -223,7 +223,7 @@ export function Wizard(): React.JSX.Element {
                 Test
               </button>
             </div>
-            <div className="badge" role="status">{probeMessage || "Not tested yet."}</div>
+            <div className="form-hint" role="status">{probeMessage || "Not tested yet."}</div>
           </div>
         </section>
       ) : null}
@@ -266,7 +266,7 @@ export function Wizard(): React.JSX.Element {
                 Test with sample
               </button>
             </div>
-            <div className="badge" role="status">{probeMessage || "Not tested yet."}</div>
+            <div className="form-hint" role="status">{probeMessage || "Not tested yet."}</div>
           </div>
         </section>
       ) : null}

@@ -7,7 +7,7 @@ import type { SourceEntry } from "../lib/api.js";
 import { useSettings, useSources } from "../hooks/useApi.js";
 import { useToast } from "../components/Toast.js";
 import { EmptyState, ErrorState, SkeletonGrid } from "../components/States.js";
-import { StatusPill } from "../components/badges.js";
+import { Pill } from "../components/decode.js";
 
 /**
  * Sources (§5.5): per-source cards (toggle, health, last run, requires,
@@ -66,10 +66,10 @@ function SourceCard({
 
   const health = !source.enabled ? "off" : source.last_status === "ok" ? "ok" : source.last_status === "error" ? "error" : "warn";
   return (
-    <section className="card" aria-label={source.label}>
+    <section className="panel" aria-label={source.label}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <strong>{source.label}</strong>
-        <StatusPill status={health} />
+        <Pill tone={health === "ok" ? "good" : health === "error" ? "bad" : undefined}>{health}</Pill>
         <span style={{ flex: 1 }} />
         <label>
           <input
@@ -81,15 +81,15 @@ function SourceCard({
           Enabled
         </label>
       </div>
-      <div className="topic-card-meta" style={{ marginTop: 8 }}>
-        <span className="badge">
+      <div className="topic-meta" style={{ marginTop: 8 }}>
+        <span className="form-hint">
           last run: {source.last_items ?? "—"} items{source.last_run_at ? ` · ${source.last_run_at.slice(0, 16).replace("T", " ")}` : ""}
         </span>
-        {source.last_error ? <span className="badge">error: {source.last_error}</span> : null}
+        {source.last_error ? <span className="form-hint">error: {source.last_error}</span> : null}
       </div>
       {source.requires.length > 0 ? (
-        <div className="topic-card-meta" style={{ marginTop: 4 }}>
-          <span className="badge">Needs:</span>
+        <div className="topic-meta" style={{ marginTop: 4 }}>
+          <span className="form-hint">needs:</span>
           {source.requires.map((req) => (
             <span key={req} className="chip">{req}</span>
           ))}
@@ -154,7 +154,7 @@ function CustomLists({ onToast }: { onToast: (tone: "good" | "bad", message: str
     const list = entry ? stringList(entry.config[field]) : [];
     const value = key === "rss" ? draft.rss : draft.webpage;
     return (
-      <section className="card" aria-label={title}>
+      <section className="panel" aria-label={title}>
         <strong>{title}</strong>
         <ul>
           {list.map((url) => (
@@ -214,7 +214,7 @@ function Niches({ onToast }: { onToast: (tone: "good" | "bad", message: string) 
   const text = value ?? niches.join(", ");
 
   return (
-    <section className="card" aria-label="Niche keywords">
+    <section className="panel" aria-label="Niche keywords">
       <strong>Niche keywords</strong>
       <p className="form-hint">Comma-separated. Jev measures relevance against these.</p>
       <div style={{ display: "flex", gap: 8 }}>
