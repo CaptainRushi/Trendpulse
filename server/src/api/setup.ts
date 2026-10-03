@@ -52,7 +52,12 @@ export function registerSetup(app: FastifyInstance, ctx: AppContext): void {
           : undefined,
     });
     if (!result.ok) return { ok: false, error: result.error, latency_ms: result.latencyMs };
-    return { ok: true, model: result.model, latency_ms: result.latencyMs };
+    return {
+      ok: true,
+      model: result.model,
+      latency_ms: result.latencyMs,
+      ...(result.choice !== undefined ? { choice: result.choice, confidence: result.confidence } : {}),
+    };
   });
 
   app.post("/api/setup/test-sheets", async (request) => {

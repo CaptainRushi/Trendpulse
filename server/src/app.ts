@@ -13,9 +13,11 @@ import fastifyStatic from "@fastify/static";
 import { registerPasswordGate } from "./api/auth.js";
 import type { AppContext } from "./api/context.js";
 import { appLogger } from "./api/context.js";
+import { registerCors } from "./api/cors.js";
 import { mapError } from "./api/errors.js";
 import { registerExports } from "./api/exports.js";
 import { registerHealth } from "./api/health.js";
+import { registerJevHealth } from "./api/jev.js";
 import { registerRuns } from "./api/runs.js";
 import { registerSettings } from "./api/settings.js";
 import { registerSetup } from "./api/setup.js";
@@ -29,9 +31,11 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   const log = appLogger(ctx);
 
+  registerCors(app, ctx);
   registerPasswordGate(app, ctx.config.dashboardPassword);
 
   registerHealth(app, ctx);
+  registerJevHealth(app, ctx);
   registerTrends(app, ctx);
   registerExports(app, ctx);
   registerSources(app, ctx);
@@ -40,11 +44,11 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerRuns(app, ctx);
   registerSetup(app, ctx);
 
+  // Handlers first: encapsulated plugin contexts (fastify-static below)
+  // inherit the root error/not-found handlers only when they exist before
+  // the plugin boots — setting them after lets plugin errors (and route
+  // errors, once static adds its hooks) fall through to Fastify defaults.
   const spa = ctx.staticDir && existsSync(join(ctx.staticDir, "index.html")) ? ctx.staticDir : null;
-  if (spa) {
-    await app.register(fastifyStatic, { root: spa });
-  }
-
   app.setNotFoundHandler((request, reply) => {
     // SPA fallback: frontend routes serve index.html; only /api/* gets JSON 404s.
     if (spa && !request.url.startsWith("/api/")) {
@@ -67,6 +71,10 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     }
     reply.code(mapped.statusCode).send(mapped.body);
   });
+
+  if (spa) {
+    await app.register(fastifyStatic, { root: spa });
+  }
 
   return app;
 }

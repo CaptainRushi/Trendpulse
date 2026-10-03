@@ -18,6 +18,9 @@ export interface OmnirouteProbeSuccess extends ProbeSuccess {
 
 export interface JevProbeSuccess extends ProbeSuccess {
   model: string;
+  /** Sample classification answer (direct SystemOne path only). */
+  choice?: string | undefined;
+  confidence?: number | undefined;
 }
 
 export interface ProbeFailure {
@@ -90,14 +93,21 @@ export async function testJevConnection(options: JevProbeOptions): Promise<JevPr
       fetchImpl: options.fetchImpl,
     });
     try {
-      await client.classify(
+      const result = await client.classify(
         { title: "Probe item", snippet: "A connectivity check, not a real trend." },
         {
+          category: {
+            type: "choice",
+            instructions: "Which category best fits this item?",
+            criteria: { Tech: "technology", Other: "anything else" },
+          },
           quality: { type: "noul", instructions: "Is this substantive, not spam?" },
         },
         "test",
       );
-      return { ok: true, model: options.model, latencyMs: Date.now() - started };
+      const picked = result.answers["category"];
+      const choice = picked?.kind === "choice" ? { choice: picked.choice, confidence: picked.confidence } : {};
+      return { ok: true, model: options.model, latencyMs: Date.now() - started, ...choice };
     } catch (error) {
       return { ok: false, latencyMs: Date.now() - started, error: friendlyError(baseUrl, error) };
     }

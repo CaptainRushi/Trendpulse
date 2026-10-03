@@ -46,6 +46,9 @@ export function topicsToCsv(topics: SortedTrendRecord[], date: string): string {
   return `# date: ${date}\n${header.join(",")}\n${lines.join("\n")}\n`;
 }
 
+/** UTF-8 BOM so Excel opens the file with the right encoding (API-14). */
+export const CSV_BOM = "﻿";
+
 export function topicsToMarkdown(topics: SortedTrendRecord[], date: string): string {
   const parts = [`# Trends for ${date}`, ""];
   for (const topic of topics) {
@@ -67,7 +70,7 @@ export function registerExports(app: FastifyInstance, ctx: AppContext): void {
   app.get("/api/export/topics.csv", async (request, reply) => {
     const filter = parseTrendsQuery(ctx, request.query);
     const result = await loadTrends(ctx, filter);
-    const body = topicsToCsv(result.items, result.date);
+    const body = CSV_BOM + topicsToCsv(result.items, result.date);
     reply
       .header("Content-Type", "text/csv; charset=utf-8")
       .header("Content-Disposition", `attachment; filename="topics-${result.date}.csv"`)

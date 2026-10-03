@@ -381,3 +381,12 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Decision:** `run:once` root alias → `pipeline start` (stage table on stderr, summary JSON on stdout).
 - **Decision:** New `run-step7.test.ts` (RUN-01/02/03/04/07/08/12/14, W-07) + `cron-step7.test.ts` (RUN-09 live 1.3s tick, RUN-10 catch-up end-to-end).
 - **Live `run:once` ×2 (real HN, no sheet yet):** collect/normalize/dedupe `done`, `persist_raw` failed with the actionable service-account message, run `failed` — exactly the task-2 failure semantics. Sheet-backed rerun proof (0 added rows) waits on your Google key + sheet id; fakes prove it (NRM-05, verify F13).
+
+## 2026-10-03 — Step 8 REST API (docs/12 Prompt 8, ponytail full)
+
+- **Decision:** The Phase-7 API surface already satisfied most of the route table, so Step 8 added only the gaps: `GET /api/jev/health` (key presence, last Jev call outcome from `llm_calls`, price, today's UTC spend vs run-budget knob), manual CORS (same-origin + Vite 5173 in dev, foreign origins 403), UTF-8 BOM on the CSV export, and `choice` + `confidence` on the test-jev probe (sample now asks a `category` choice question; validated against shared `JevHealthResponse`/`TestResult` shapes).
+- **Reason:** No new deps (`@fastify/cors` avoided — one hook), no response-shape churn on working routes.
+- **Decision (bug, live-found):** `setErrorHandler`/`setNotFoundHandler` moved BEFORE `await app.register(fastifyStatic)`.
+- **Reason:** Live boot (static serving on) returned Fastify-default 500s instead of the `{error:{code,message}}` envelope; dev/test (no static dir) were unaffected, which is why the suite never caught it. Encapsulated plugin contexts inherit root handlers only if set before the plugin boots.
+- **Decision:** New `server/test/api/api-step8.test.ts` carries the Step-8 IDs (API-01/02/03/04/05/06/07/08/09/11/12/14/15, SEC-01/04/06); older route tests keep their ID-less titles (surgical — not renamed).
+- **Live check (no sheet creds, so no real topics yet):** production boot `curl /api/health` → services `error`, live `next_run_at`, real failed `last_run`; `curl /api/trends` → VALIDATION envelope naming the missing service-account key; `curl /api/jev/health` → `{"key_present":false,"last_call_ok":false,...}` (false = earlier real runs logged failed Jev calls before fallback). First real topic paste waits on your Google key + sheet id.
