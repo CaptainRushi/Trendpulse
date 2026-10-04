@@ -18,6 +18,13 @@ export type ErrorCode =
   | "LLM_UNREACHABLE"
   | "LLM_INVALID_OUTPUT"
   | "SETUP_INCOMPLETE"
+  | "COMPOSIO_NOT_CONFIGURED"
+  | "COMPOSIO_NOT_CONNECTED"
+  | "COMPOSIO_AUTH_EXPIRED"
+  | "COMPOSIO_TOOL_MISSING"
+  | "COMPOSIO_TOOL_ERROR"
+  | "COMPOSIO_BUDGET_EXCEEDED"
+  | "SHEET_ID_INVALID"
   | "UNAUTHORIZED"
   | "INTERNAL";
 
@@ -98,7 +105,7 @@ export function mapError(error: unknown): MappedError {
           error: {
             code: "SHEETS_FORBIDDEN",
             message: "Google Sheets denied access.",
-            hint: "Share the sheet with the service-account email as Editor.",
+            hint: "Check Composio connection or share the sheet with the service-account email as Editor.",
           },
         },
       };
