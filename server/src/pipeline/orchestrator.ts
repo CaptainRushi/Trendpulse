@@ -732,6 +732,18 @@ export class Orchestrator {
         this.log.warn({ runId: exec.runId, err: message }, "daily digest skipped");
       }
     }
+    // Pulse index (Doc 16 G1): garnish like the digest — never fails persist.
+    if (topics.length > 0) {
+      try {
+        const { writeLatestSet } = await import("../pulse/index.js");
+        const pulse = writeLatestSet(this.db, exec.runId, exec.runDate, topics, this.config.pulseTopN);
+        if (pulse.topChanged) {
+          this.events.emit("pulse", "top_changed", { date: exec.runDate, topic_id: topics[0]?.topic_id ?? "" });
+        }
+      } catch (error) {
+        this.log.warn({ runId: exec.runId, err: error instanceof Error ? error.message : String(error) }, "pulse index skipped");
+      }
+    }
     this.setStageDetail(exec.runId, "persist_sorted", {
       topicsAppended: topics.length,
       digestSkipped,

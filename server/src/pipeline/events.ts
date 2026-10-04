@@ -4,7 +4,16 @@
  * `done` / `error`; the API layer subscribes. A bounded history (latest
  * 500) lets SSE replay recent events on connect (Phase 2 gap 4).
  */
-export type PipelineEventType = "stage" | "source" | "progress" | "log" | "done" | "error";
+export type PipelineEventType =
+  | "stage"
+  | "source"
+  | "progress"
+  | "log"
+  | "done"
+  | "error"
+  | "sample"
+  | "top_changed"
+  | "cycle";
 
 export interface PipelineEvent {
   seq: number;

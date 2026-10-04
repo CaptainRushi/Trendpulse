@@ -90,6 +90,11 @@ const EnvSchema = z.object({
   YOUTUBE_API_KEY: z.string().default(""),
   PRODUCTHUNT_TOKEN: z.string().default(""),
 
+  PULSE_ENABLED: boolField(true),
+  PULSE_INTERVAL_MIN: numField(20).pipe(z.number().int().min(5).max(60)),
+  PULSE_TOP_N: numField(5).pipe(z.number().int().min(1).max(10)),
+  PULSE_MAX_REQUESTS: numField(30).pipe(z.number().int().min(1)),
+  PULSE_RETENTION_DAYS: numField(14).pipe(z.number().int().min(1)),
   SORT_BATCH_SIZE: numField(30).pipe(z.number().int().min(1)),
   TOP_N: numField(50).pipe(z.number().int().min(1)),
   RETENTION_DAYS: numField(30).pipe(z.number().int().min(1)),
@@ -146,6 +151,11 @@ export interface TrendPulseConfig {
   githubToken: string;
   youtubeApiKey: string;
   producthuntToken: string;
+  pulseEnabled: boolean;
+  pulseIntervalMin: number;
+  pulseTopN: number;
+  pulseMaxRequests: number;
+  pulseRetentionDays: number;
   sortBatchSize: number;
   topN: number;
   retentionDays: number;
@@ -225,6 +235,11 @@ export function loadConfig(env: RawEnv = process.env): TrendPulseConfig {
     githubToken: e.GITHUB_TOKEN,
     youtubeApiKey: e.YOUTUBE_API_KEY,
     producthuntToken: e.PRODUCTHUNT_TOKEN,
+    pulseEnabled: e.PULSE_ENABLED,
+    pulseIntervalMin: e.PULSE_INTERVAL_MIN,
+    pulseTopN: e.PULSE_TOP_N,
+    pulseMaxRequests: e.PULSE_MAX_REQUESTS,
+    pulseRetentionDays: e.PULSE_RETENTION_DAYS,
     sortBatchSize: e.SORT_BATCH_SIZE,
     topN: e.TOP_N,
     retentionDays: e.RETENTION_DAYS,
