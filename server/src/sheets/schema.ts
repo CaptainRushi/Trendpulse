@@ -110,6 +110,18 @@ export const TAB_HEADERS: Record<string, readonly string[]> = {
 /** Sheets API per-minute limits → writes are batched at most this large. */
 export const MAX_APPEND_BATCH = 500;
 
+/**
+ * Key column index per tab for idempotent append retry (docs/15 §5): after
+ * an ambiguous failure the client re-reads this column and drops rows that
+ * already landed before retrying.
+ */
+export const TAB_KEY_COLUMNS: Record<string, number> = {
+  [RAW_TRENDS_TAB]: 0,
+  [SORTED_TRENDS_TAB]: 0,
+  [DAILY_DIGEST_TAB]: 1,
+  [RUNS_LOG_TAB]: 0,
+};
+
 // ── Record types (rich values; mappers stringify for the sheet) ─────────────
 
 export const SourceKey = z.enum([
