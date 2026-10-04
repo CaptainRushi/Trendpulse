@@ -1133,3 +1133,8 @@ textarea.input {
     outline-offset: 2px;
   }
 }
+
+/* pulse hero title: repo/tool names are single long tokens — wrap anywhere */
+.pulse-card h2 {
+  overflow-wrap: anywhere;
+}

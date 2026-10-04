@@ -140,7 +140,7 @@ describe("PULSE-20 chart renders series, baseline and end labels", () => {
     expect(svg?.getAttribute("viewBox")).toBe("0 0 640 260");
     expect(svg?.getAttribute("aria-label")).toContain("Topic 1 +54");
     const labels = [...(container.querySelectorAll(".end-label") as unknown as Element[])].map((e) => e.textContent);
-    expect(labels).toEqual(["Topic 1 +54%", "Topic 2 +21%"]);
+    expect(labels).toEqual(["1. Topic 1 +54%", "2. Topic 2 +21%"]);
     expect(container.querySelector(".baseline-line")).not.toBeNull();
   });
 

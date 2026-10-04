@@ -12,7 +12,7 @@ const SERIES_DASHES = ["", "", "5 3", "2 3", "8 3"];
 
 const W = 640;
 const H = 260;
-const PAD = { l: 44, r: 90, t: 12, b: 28 };
+const PAD = { l: 44, r: 132, t: 12, b: 28 };
 
 export interface ScoreBar {
   topic_id: string;
@@ -36,6 +36,13 @@ function timeTicks(min: number, max: number): number[] {
 function fmtTime(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** End labels share ~80 px: rank + short title keeps them inside the viewBox. */
+function shortLabel(title: string, seriesIndex: number): string {
+  const max = 14;
+  const short = title.length > max ? `${title.slice(0, max - 1)}…` : title;
+  return `${String(seriesIndex + 1)}. ${short}`;
 }
 
 export function LiveChart({ series, mode, scores = [], onSelectTopic }: ChartProps): React.JSX.Element {
@@ -140,14 +147,15 @@ export function LiveChart({ series, mode, scores = [], onSelectTopic }: ChartPro
               {last ? (
                 <text
                   x={W - PAD.r + 8}
-                  y={y(last.index)}
+                  y={y(last.index) + (si - (visible.length - 1) / 2) * 13}
+                  aria-label={`${s.title} ${Math.round(last.index - 100) >= 0 ? "+" : ""}${Math.round(last.index - 100)} percent`}
                   className="end-label"
                   onClick={() => onSelectTopic?.(s.topic_id)}
                   onKeyDown={(e) => { if (e.key === "Enter") onSelectTopic?.(s.topic_id); }}
                   tabIndex={onSelectTopic ? 0 : undefined}
                   role={onSelectTopic ? "link" : undefined}
                 >
-                  {s.title} {Math.round(last.index - 100) >= 0 ? "+" : ""}{Math.round(last.index - 100)}%
+                  {shortLabel(s.title, si)} {Math.round(last.index - 100) >= 0 ? "+" : ""}{Math.round(last.index - 100)}%
                 </text>
               ) : null}
             </g>
@@ -183,3 +191,4 @@ export function LiveChart({ series, mode, scores = [], onSelectTopic }: ChartPro
     </div>
   );
 }
+
