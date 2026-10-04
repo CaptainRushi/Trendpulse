@@ -48,7 +48,7 @@ function Shell(): React.JSX.Element {
       <nav className="bar" aria-label="Primary">
         <NavLink to="/" className="bar-brand">
           <img src="/logo.svg" alt="" width={22} height={22} aria-hidden="true" />
-          trendpulse
+          Trendpulse
         </NavLink>
         <div className="bar-links">
           {NAV.map((item) => (
