@@ -433,3 +433,15 @@ Spec priority on conflict: `05_BACKEND_SCHEMA.md` > `02_TRD.md` > `01_PRD.md` > 
 - **Security:** user pasted the service-account key in chat â†’ file saved to secrets/service-account.json, stray repo-root copy trace-dev-*.json deleted; key must be rotated (told user). GOOGLE_SHEET_ID set from user URL; sheets:init 403 â†’ sheet not yet shared (user action). Key path in .env is ../secrets/service-account.json because workspace scripts run with CWD=server/.
 - **Gotcha:** `verify` fake mode spawns `npx vitest` per row â†’ >3 min for 4 rows on Windows (FND-03, fixed in R1 with in-process runner + process.execPath).
 - **Engines:** package.json says node >=20; running 26.4.0 here. Node 20/22 compat noted but not tested in this pass (no other runtimes on machine).
+
+## 2026-10-04 — pulse-G0 plan (Doc 16 live graph, ponytail full)
+
+10-line plan: (1) migration 008 topic_index/topic_samples/pulse_cycles; (2) G1 sampler core + persist hook + PULSE-01..09 on fakes; (3) G2 HN/GH/OAuth-only-reddit refreshers + fixtures PULSE-10..14; (4) G3 today/top, live/samples, live/stream, sample-now + PULSE-15..19; (5) G4 hero + hand-rolled SVG chart + hooks/badge + PULSE-20..30 (cut sparklines first if late); (6) G5 minimal dev:fake seed + --pulse-fast + e2e PULSE-31..33; (7) G6 gates + one real HN/GH cycle; (8) commit per package pulse-Gn.
+Files: server/src/pulse/*, server/src/sheets/composioClient.ts untouched, orchestrator persist hook, server/src/api/{today,live}.ts, shared/src/api.ts, web/src/pages/Today.tsx + web/src/{components/LiveChart.tsx,hooks/useLive.ts}, server/scripts/fake-seed.ts, tests PULSE-nn. No chart lib, no new runtime deps.
+Conflicts: none — Doc 16 §4 accepts unwired status (temp PULSE-nn names, no FR/phase/checker changes).
+- **Definitions (locked):** top topic = rank 1 of today's latest set (trend_score; hidden excluded; tie-break source_count then newer); no set today ? most recent day + from-date label, no live line.
+- **Sampled items:** =3 evidence items, highest baseline, refreshable sources only (HN score/descendants, GH stars w/ ETag, reddit OAuth-only else skipped); rest skip with reason.
+- **Growth index:** 100 * current/baseline sums; failed item carries last value; all-fail adds no point; zero-baseline topic has no series.
+- **Deviation:** dev:fake does not exist (DECISIONS R0: scheduled INF-07) — G5 builds only the minimal seed the demo needs, not the full mode.
+- **Deviation:** samples live in SQLite topic_samples (spec §1), never mirror_sorted — no read-path rework.
+- **Deviation:** PULSE ?????? refresher is OAuth-only stub per spec; cut first if late (spec cut order).
