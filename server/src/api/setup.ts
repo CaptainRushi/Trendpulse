@@ -9,8 +9,8 @@ import { testJevConnection, testOmnirouteConnection } from "../llm/probe.js";
 import { badRequest } from "./errors.js";
 import type { AppContext } from "./context.js";
 import { SHEETS_SCOPE } from "../sheets/auth.js";
-import { createRealSheetsClient, GoogleSheetsClient } from "../sheets/realClient.js";
-import { createGateway } from "../integrations/composio/gateway.js";
+import { GoogleSheetsClient } from "../sheets/realClient.js";
+import { resolveSheetsClient } from "../sheets/resolve.js";
 
 const TestOmnirouteBody = z.object({
   base_url: z.string().url(),
@@ -95,21 +95,12 @@ export function registerSetup(app: FastifyInstance, ctx: AppContext): void {
         });
         client = new GoogleSheetsClient(google.sheets({ version: "v4", auth }));
         email = key.client_email;
-      } else if (ctx.config.sheetsMode === "composio" || ctx.config.composioApiKey !== "") {
-        // docs/15: composio mode is tested through the gateway, no key echo.
-        const gateway = createGateway({
-          apiKey: ctx.config.composioApiKey,
-          userId: ctx.config.composioUserId,
-          timeoutMs: ctx.config.composioCallTimeoutMs,
-        });
-        const info = await gateway.execute("spreadsheetInfo", { spreadsheet_id: sheetId });
-        if (!info.ok) return { ok: false, error: info.error ?? "tool failed" };
-        const data = info.data as { title?: string; tabs?: { title: string }[] } | undefined;
-        return { ok: true, mode: "composio", title: data?.title ?? "", tabs: (data?.tabs ?? []).map((t) => t.title) };
       } else {
-        const bundle = createRealSheetsClient(ctx.config.googleServiceAccountJsonPath);
-        client = bundle.client;
-        email = bundle.serviceAccountEmail;
+        // Shared priority (resolve.ts): usable local key file first, then
+        // Composio — so the wizard probe and the pipeline agree. No key echo.
+        const resolved = resolveSheetsClient(ctx.config);
+        client = resolved.client;
+        email = resolved.detail;
       }
       const tabs = await client.getTabTitles(sheetId);
       return { ok: true, service_account_email: email, tabs };

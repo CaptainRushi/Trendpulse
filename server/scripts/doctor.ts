@@ -13,8 +13,7 @@ import { applyMigrations, openDatabase, type StateDb } from "../src/db/sqlite.js
 import { COLLECTORS, pingSource } from "../src/collectors/registry.js";
 import type { SourceKey } from "../src/sheets/schema.js";
 import { testJevConnection, testOmnirouteConnection } from "../src/llm/probe.js";
-import { createRealSheetsClient } from "../src/sheets/realClient.js";
-import { ComposioSheetsClient } from "../src/sheets/composioClient.js";
+import { resolveSheetsClient } from "../src/sheets/resolve.js";
 import { buildCollectContext } from "./lib/context.js";
 
 loadEnvFiles();
@@ -97,12 +96,9 @@ if (config !== undefined) {
     warn("sheets tabs", "GOOGLE_SHEET_ID not set — run npm run setup.");
   } else {
     try {
-      const client = config.composioApiKey !== ""
-        ? new ComposioSheetsClient(config.composioApiKey)
-        : createRealSheetsClient(config.googleServiceAccountJsonPath).client;
-      const tabs = await client.getTabTitles(sheetId);
-      const authLabel = config.composioApiKey !== "" ? "composio" : "service-account";
-      ok("sheets tabs", `${String(tabs.length)} tabs via ${authLabel}`);
+      const resolved = resolveSheetsClient(config);
+      const tabs = await resolved.client.getTabTitles(sheetId);
+      ok("sheets tabs", `${String(tabs.length)} tabs via ${resolved.via}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/403|forbidden|permission/i.test(message)) {

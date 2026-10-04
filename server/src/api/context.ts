@@ -8,8 +8,7 @@ import type { StateDb } from "../db/sqlite.js";
 import type { TrendPulseConfig } from "../config/env.js";
 import type { SheetsClient } from "../sheets/client.js";
 import { SheetsRepo } from "../sheets/repo.js";
-import { createRealSheetsClient } from "../sheets/realClient.js";
-import { ComposioSheetsClient } from "../sheets/composioClient.js";
+import { resolveSheetsClient } from "../sheets/resolve.js";
 import { SheetsApiError } from "../sheets/client.js";
 import type { LlmExtractor } from "../llm/extract.js";
 import type { Classifier } from "../llm/classifier.js";
@@ -62,21 +61,11 @@ export function appRepo(ctx: AppContext): SheetsRepo {
   try {
     if (ctx.sheetsClient) {
       client = ctx.sheetsClient;
-    } else if (ctx.config.sheetsMode === "service_account") {
-      client = createRealSheetsClient(ctx.config.googleServiceAccountJsonPath).client;
-    } else if (ctx.config.sheetsMode === "composio") {
-      client = new ComposioSheetsClient({
-        apiKey: ctx.config.composioApiKey,
-        userId: ctx.config.composioUserId,
-        timeoutMs: ctx.config.composioCallTimeoutMs,
-      });
     } else {
-      throw new SheetsApiError(
-        `SHEETS_MODE='${ctx.config.sheetsMode}' has no runtime client — use composio or service_account.`,
-        {},
-      );
+      client = resolveSheetsClient(ctx.config).client;
     }
   } catch (error) {
+    if (error instanceof SheetsApiError) throw error;
     throw new SheetsApiError(error instanceof Error ? error.message : String(error), {});
   }
   return new SheetsRepo(client, {

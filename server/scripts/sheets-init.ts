@@ -3,12 +3,12 @@
  * Needs GOOGLE_SHEET_ID (or --create with a Composio key) and credentials;
  * otherwise prints exactly what is missing and exits 1 (no stack trace).
  */
-import { existsSync } from "node:fs";
 import { loadEnvFiles } from "../src/config/loadEnv.js";
 import { loadConfig } from "../src/config/env.js";
 import { SheetsWriteQueue } from "../src/sheets/queue.js";
-import { createRealSheetsClient } from "../src/sheets/realClient.js";
 import { ComposioSheetsClient } from "../src/sheets/composioClient.js";
+import { resolveSheetsClient } from "../src/sheets/resolve.js";
+import type { SheetsClient } from "../src/sheets/client.js";
 import { SheetsRepo } from "../src/sheets/repo.js";
 
 loadEnvFiles();
@@ -17,22 +17,21 @@ const config = loadConfig();
 const createFlag = process.argv.includes("--create");
 let sheetId = config.googleSheetId;
 
-const useComposio = config.sheetsMode === "composio" || config.composioApiKey !== "";
-const client: ComposioSheetsClient | ReturnType<typeof createRealSheetsClient>["client"] = useComposio
-  ? new ComposioSheetsClient({
-      apiKey: config.composioApiKey,
-      userId: config.composioUserId,
-      timeoutMs: config.composioCallTimeoutMs,
-    })
-  : createRealSheetsClient(config.googleServiceAccountJsonPath).client;
-const authLabel = useComposio ? "composio" : "service-account";
+let client: SheetsClient;
+let authLabel = "";
+try {
+  const resolved = resolveSheetsClient(config);
+  client = resolved.client;
+  authLabel = resolved.via === "composio" ? "composio" : `service-account (${resolved.detail})`;
+} catch (error) {
+  process.stdout.write("sheets:init skipped — missing:\n");
+  process.stdout.write(`  - ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}
 
 const missing: string[] = [];
 if (sheetId === "" && !(createFlag && client instanceof ComposioSheetsClient)) {
   missing.push("GOOGLE_SHEET_ID (or --create with a Composio key)");
-}
-if (config.composioApiKey === "" && !existsSync(config.googleServiceAccountJsonPath)) {
-  missing.push("COMPOSIO_API_KEY or service-account key file");
 }
 if (missing.length > 0) {
   process.stdout.write("sheets:init skipped — missing:\n");
