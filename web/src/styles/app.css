@@ -95,7 +95,10 @@ pre {
 .bar-brand {
   color: var(--ink);
   text-decoration: none;
-  font-weight: 700;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.03em;
   display: inline-flex;
   align-items: center;
   gap: 8px;
