@@ -156,7 +156,7 @@ describe("PULSE-14 dead item keeps last value and counts failed", () => {
         userAgent: "test",
         maxAttempts: 1,
         fetchImpl: (input: RequestInfo | URL) => {
-          const url = input instanceof URL ? input.toString() : String(input);
+          const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
           if (url.includes("item/9.json")) return Promise.resolve(new Response(JSON.stringify({ id: 9, deleted: true }), { status: 200 }));
           return Promise.resolve(new Response(fixture("pulse/hn_item_8863.json"), { status: 200 }));
         },
