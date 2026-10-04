@@ -1,0 +1,26 @@
+{
+  "toolkit": "googlesheets",
+  "version": "UNPINNED",
+  "generated_at": "2026-10-04T00:00:00.000Z",
+  "note": "Hand-made from docs/15 §4. Run npm run composio:discover with a valid COMPOSIO_API_KEY to pin a dated version.",
+  "ops": {
+    "createSpreadsheet": { "slug": "GOOGLESHEETS_CREATE_GOOGLE_SHEET1", "params": ["title"] },
+    "spreadsheetInfo": { "slug": "GOOGLESHEETS_GET_SPREADSHEET_INFO", "params": ["spreadsheet_id"] },
+    "addSheet": { "slug": "GOOGLESHEETS_ADD_SHEET", "params": ["spreadsheet_id", "title"] },
+    "writeRange": {
+      "slug": "GOOGLESHEETS_VALUES_UPDATE",
+      "params": ["spreadsheet_id", "range", "values", "value_input_option"]
+    },
+    "appendRows": {
+      "slug": "GOOGLESHEETS_SPREADSHEETS_VALUES_APPEND",
+      "params": ["spreadsheet_id", "range", "values", "value_input_option"]
+    },
+    "readRanges": { "slug": "GOOGLESHEETS_BATCH_GET", "params": ["spreadsheet_id", "ranges"] },
+    "updateRanges": {
+      "slug": "GOOGLESHEETS_UPDATE_VALUES_BATCH",
+      "params": ["spreadsheet_id", "data", "value_input_option"]
+    },
+    "deleteRows": { "slug": "GOOGLESHEETS_DELETE_DIMENSION", "params": ["spreadsheet_id"] },
+    "formatHeader": { "slug": "GOOGLESHEETS_FORMAT_CELL", "params": ["spreadsheet_id"], "optional": true }
+  }
+}

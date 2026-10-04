@@ -41,6 +41,15 @@ const EnvSchema = z.object({
   RUN_MISSED_ON_START: boolField(true),
   AUTO_RESUME: boolField(false),
 
+  COMPOSIO_API_KEY: z.string().default(""),
+  // docs/15 §3: composio-first Sheets modes. SHEETS_MODE selects the client;
+  // the toolkit version stays in tools.lock.json (never an env var).
+  SHEETS_MODE: z.enum(["composio", "bridge", "service_account", "fake"]).default("composio"),
+  SHEETS_READ_STRATEGY: z.enum(["mirror", "ttl"]).default("mirror"),
+  COMPOSIO_USER_ID: z.string().default("trendpulse-local"),
+  COMPOSIO_GOOGLESHEETS_AUTH_CONFIG_ID: z.string().default(""),
+  COMPOSIO_MONTHLY_CALL_BUDGET: numField(15000).pipe(z.number().int().min(0)),
+  COMPOSIO_CALL_TIMEOUT_MS: numField(60000).pipe(z.number().int().min(1000)),
   GOOGLE_SERVICE_ACCOUNT_JSON_PATH: z.string().default("./secrets/service-account.json"),
   GOOGLE_SHEET_ID: z.string().default(""),
   SHEET_CACHE_TTL_S: numField(60).pipe(z.number().int().min(0)),
@@ -98,6 +107,13 @@ export interface TrendPulseConfig {
   scheduleCron: string;
   runMissedOnStart: boolean;
   autoResume: boolean;
+  composioApiKey: string;
+  sheetsMode: "composio" | "bridge" | "service_account" | "fake";
+  sheetsReadStrategy: "mirror" | "ttl";
+  composioUserId: string;
+  composioGooglesheetsAuthConfigId: string;
+  composioMonthlyCallBudget: number;
+  composioCallTimeoutMs: number;
   googleServiceAccountJsonPath: string;
   googleSheetId: string;
   sheetCacheTtlS: number;
@@ -168,6 +184,13 @@ export function loadConfig(env: RawEnv = process.env): TrendPulseConfig {
     scheduleCron: e.SCHEDULE_CRON,
     runMissedOnStart: e.RUN_MISSED_ON_START,
     autoResume: e.AUTO_RESUME,
+    composioApiKey: e.COMPOSIO_API_KEY,
+    sheetsMode: e.SHEETS_MODE,
+    sheetsReadStrategy: e.SHEETS_READ_STRATEGY,
+    composioUserId: e.COMPOSIO_USER_ID,
+    composioGooglesheetsAuthConfigId: e.COMPOSIO_GOOGLESHEETS_AUTH_CONFIG_ID,
+    composioMonthlyCallBudget: e.COMPOSIO_MONTHLY_CALL_BUDGET,
+    composioCallTimeoutMs: e.COMPOSIO_CALL_TIMEOUT_MS,
     googleServiceAccountJsonPath: e.GOOGLE_SERVICE_ACCOUNT_JSON_PATH,
     googleSheetId: e.GOOGLE_SHEET_ID,
     sheetCacheTtlS: e.SHEET_CACHE_TTL_S,
