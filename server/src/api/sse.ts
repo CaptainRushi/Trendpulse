@@ -25,6 +25,7 @@ export function streamRunEvents(
   reply: FastifyReply,
   events: EventBus,
   runId: string,
+  options: { afterSeq?: number } = {},
 ): void {
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -33,8 +34,10 @@ export function streamRunEvents(
   });
   // A late subscriber to a finished run gets the full replay, then a clean
   // close — no dangling subscription on a run that will never emit again.
+  // afterSeq honors Last-Event-ID (live stream reconnects).
   let finished = false;
-  for (const event of runHistory(events, runId)) {
+  const replay = runHistory(events, runId).filter((event) => options.afterSeq === undefined || event.seq > options.afterSeq);
+  for (const event of replay) {
     reply.raw.write(formatSseEvent(event));
     if (event.type === "done" || event.type === "error") finished = true;
   }

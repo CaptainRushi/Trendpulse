@@ -33,6 +33,16 @@ export interface CycleResult {
   errors: number;
 }
 
+/** Read-only pipeline-activity probe (locks table, no side effects). */
+export function isPipelineActive(db: StateDb): boolean {
+  const row = db.prepare("SELECT heartbeat_at FROM locks WHERE name = 'pipeline'").get() as
+    | { heartbeat_at: string }
+    | undefined;
+  if (!row) return false;
+  const age = Date.now() - Date.parse(row.heartbeat_at);
+  return Number.isFinite(age) && age <= 5 * 60 * 1000;
+}
+
 /** Growth index: 100 * current/baseline. Zero baseline → no series. */
 export function growthIndex(current: number, baseline: number): number {
   if (baseline <= 0) return Number.NaN;
@@ -47,7 +57,14 @@ export class PulseSampler {
   /** "source|date" → 429 count (must survive across cycles to reach two). */
   private readonly rateHits = new Map<string, number>();
 
+  /** Last manual sample-now timestamp (60 s cooldown lives here). */
+  lastManualAt = 0;
+
   constructor(private readonly deps: SamplerDeps) {}
+
+  isRunning(): boolean {
+    return this.running;
+  }
 
   start(): void {
     if (this.timer) return;

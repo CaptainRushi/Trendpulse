@@ -11,6 +11,12 @@ import { recoverOnBoot } from "./scheduler/lock.js";
 import { ScraplingSupervisor, setScrapingSupervisor } from "./scraping/supervisor.js";
 import { createLogger, setRootLogger } from "./utils/logger.js";
 import { APP_VERSION } from "./version.js";
+import { HttpClient } from "./collectors/http.js";
+import { readSettingsMap } from "./config/settings.js";
+import { pipelineBus } from "./pipeline/events.js";
+import { PulseSampler, isPipelineActive } from "./pulse/sampler.js";
+import { resolvePulseConfig } from "./pulse/config.js";
+import { buildRefreshers, sqliteEtagStore } from "./pulse/refreshers.js";
 
 loadEnvFiles();
 
@@ -87,6 +93,35 @@ async function main(): Promise<void> {
     process.once("SIGTERM", shutdown);
   }
 
+  // Pulse sampler (Doc 16): HTTP-only refresh cycles on a timer. Boot never
+  // blocks on it; a dead network just yields skipped cycles.
+  const pulseHttp = new HttpClient({ userAgent: config.userAgent, maxAttempts: 1, cache: sqliteEtagStore(db) });
+  const pulse = new PulseSampler({
+    db,
+    config: resolvePulseConfig(config, readSettingsMap(db)),
+    refreshers: buildRefreshers({
+      http: pulseHttp,
+      ...(config.githubToken !== "" ? { githubToken: config.githubToken } : {}),
+    }),
+    isPipelineActive: () => isPipelineActive(db),
+    emit: (type, data) => {
+      pipelineBus.emit("pulse", type, data);
+    },
+    today: () => new Date().toLocaleDateString("en-CA", { timeZone: config.tz }),
+    nowIso: () => new Date().toISOString(),
+    log: (message) => {
+      logger.info({ msg: message }, "pulse");
+    },
+  });
+  if (config.pulseEnabled) {
+    pulse.start();
+    const stopPulse = (): void => {
+      pulse.stop();
+    };
+    process.once("SIGINT", stopPulse);
+    process.once("SIGTERM", stopPulse);
+  }
+
   const orchestrator = new Orchestrator({ db, config, log: logger });
   const scheduler = new PipelineScheduler({
     cronExpression: config.scheduleCron,
@@ -126,6 +161,7 @@ async function main(): Promise<void> {
     log: logger,
     scheduler,
     staticDir: webDistDir(),
+    ...(config.pulseEnabled ? { pulse } : {}),
   });
   try {
     await app.listen({ port: config.port, host: config.host });

@@ -189,6 +189,63 @@ export type JevHealthResponse = z.infer<typeof JevHealthResponse>;
 export const RunStreamEvents = z.enum(["stage", "source", "progress", "log", "done", "error"]);
 export type RunStreamEvents = z.infer<typeof RunStreamEvents>;
 
+/** Doc 16 live graph contract. */
+
+export const PulseTopicSummary = z.object({
+  topic_id: z.string(),
+  rank: z.number(),
+  title: z.string(),
+  summary: z.string(),
+  why_trending: z.string(),
+  first_angle: z.string(),
+  category: z.string(),
+  momentum: z.string(),
+  score: z.number(),
+  source_count: z.number(),
+  items_count: z.number(),
+  has_live_metric: z.boolean(),
+});
+export type PulseTopicSummary = z.infer<typeof PulseTopicSummary>;
+
+export const PulseTodayTop = z.object({
+  date: z.string(),
+  from_previous_day: z.boolean(),
+  topic: PulseTopicSummary.nullable(),
+  runner_ups: z.array(PulseTopicSummary),
+  live: z.object({
+    enabled: z.boolean(),
+    last_sample_at: z.string().nullable(),
+    next_sample_at: z.string().nullable(),
+    interval_min: z.number(),
+    status: z.enum(["live", "paused", "stale"]),
+  }),
+});
+export type PulseTodayTop = z.infer<typeof PulseTodayTop>;
+
+export const PulsePoint = z.object({ t: z.string(), index: z.number(), total: z.number() });
+export type PulsePoint = z.infer<typeof PulsePoint>;
+
+export const PulseSeries = z.object({
+  topic_id: z.string(),
+  title: z.string(),
+  rank: z.number(),
+  has_live_metric: z.boolean(),
+  sources: z.array(z.string()),
+  points: z.array(PulsePoint),
+});
+export type PulseSeries = z.infer<typeof PulseSeries>;
+
+export const PulseSamples = z.object({
+  date: z.string(),
+  baseline_at: z.string().nullable(),
+  series: z.array(PulseSeries),
+});
+export type PulseSamples = z.infer<typeof PulseSamples>;
+
+/** SSE event names for `GET /api/live/stream` (heartbeat is a comment). */
+export const LiveStreamEvents = z.enum(["sample", "top_changed", "cycle"]);
+export type LiveStreamEvents = z.infer<typeof LiveStreamEvents>;
+
 /** Every Day-1 route path (used by W-10: client calls must hit this set). */
 export const Day1Routes = [
   "GET /api/health",
@@ -214,4 +271,8 @@ export const Day1Routes = [
   "GET /api/sheets/link",
   "GET /api/export/topics.csv",
   "GET /api/jev/health",
+  "GET /api/today/top",
+  "GET /api/live/samples",
+  "GET /api/live/stream",
+  "POST /api/live/sample-now",
 ] as const;

@@ -170,6 +170,22 @@ export function latestSet(db: StateDb, runDate: string): IndexedTopic[] {
   return rows.map(toIndexed);
 }
 
+/** True when the topic has any sample (baseline or later) from this date. */
+export function hasSamples(db: StateDb, topicId: string, runDate: string): boolean {
+  const row = db
+    .prepare("SELECT 1 AS one FROM topic_samples WHERE topic_id = ? AND sampled_at >= ? AND sampled_at < ? LIMIT 1")
+    .get(topicId, `${runDate}T00:00:00`, `${runDate}\uffff`) as { one: number } | undefined;
+  return !!row;
+}
+
+/** Latest sample timestamp across a date's topics, or null. */
+export function lastSampleAt(db: StateDb, runDate: string): string | null {
+  const row = db
+    .prepare("SELECT MAX(sampled_at) AS at FROM topic_samples WHERE sampled_at >= ? AND sampled_at < ?")
+    .get(`${runDate}T00:00:00`, `${runDate}\uffff`) as { at: string | null } | undefined;
+  return row?.at ?? null;
+}
+
 /** Most recent date with any indexed set, or null. */
 export function mostRecentDate(db: StateDb): string | null {
   const row = db.prepare("SELECT run_date FROM topic_index ORDER BY run_date DESC LIMIT 1").get() as

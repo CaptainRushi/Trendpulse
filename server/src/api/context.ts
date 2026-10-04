@@ -18,6 +18,7 @@ import type { LlmClient } from "../llm/client.js";
 import { Orchestrator } from "../pipeline/orchestrator.js";
 import { pipelineBus } from "../pipeline/events.js";
 import type { EventBus } from "../pipeline/events.js";
+import type { PulseSampler } from "../pulse/sampler.js";
 import type { PipelineScheduler } from "../scheduler/cron.js";
 import { createLogger } from "../utils/logger.js";
 export interface AppContext {
@@ -35,6 +36,8 @@ export interface AppContext {
   extractor?: LlmExtractor;
   /** Live scheduler (hot-restarted on schedule_cron/timezone PUT). */
   scheduler?: PipelineScheduler;
+  /** Pulse sampler singleton (Doc 16); absent when PULSE_ENABLED is false. */
+  pulse?: PulseSampler;
   /**
    * Absolute path to the built web UI (web/dist). When set, non-/api routes
    * serve the SPA (single-port production, TRD §2); otherwise they 404.
@@ -59,14 +62,14 @@ export function appRepo(ctx: AppContext): SheetsRepo {
   try {
     if (ctx.sheetsClient) {
       client = ctx.sheetsClient;
-    } else if (ctx.config.sheetsMode === "composio" || ctx.config.composioApiKey !== "") {
+    } else if (ctx.config.sheetsMode === "service_account") {
+      client = createRealSheetsClient(ctx.config.googleServiceAccountJsonPath).client;
+    } else if (ctx.config.sheetsMode === "composio") {
       client = new ComposioSheetsClient({
         apiKey: ctx.config.composioApiKey,
         userId: ctx.config.composioUserId,
         timeoutMs: ctx.config.composioCallTimeoutMs,
       });
-    } else if (ctx.config.sheetsMode === "service_account") {
-      client = createRealSheetsClient(ctx.config.googleServiceAccountJsonPath).client;
     } else {
       throw new SheetsApiError(
         `SHEETS_MODE='${ctx.config.sheetsMode}' has no runtime client — use composio or service_account.`,
