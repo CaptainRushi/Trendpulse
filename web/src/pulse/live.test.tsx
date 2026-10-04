@@ -142,6 +142,7 @@ describe("PULSE-20 chart renders series, baseline and end labels", () => {
     const labels = [...(container.querySelectorAll(".end-label") as unknown as Element[])].map((e) => e.textContent);
     expect(labels).toEqual(["1. Topic 1 +54%", "2. Topic 2 +21%"]);
     expect(container.querySelector(".baseline-line")).not.toBeNull();
+    expect(container.querySelectorAll("circle").length).toBe(4);
   });
 
   it("scores mode renders bars instead of lines", () => {

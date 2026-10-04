@@ -130,6 +130,12 @@ export function LiveChart({ series, mode, scores = [], onSelectTopic }: ChartPro
         ))}
         <line x1={PAD.l} x2={W - PAD.r} y1={y(100)} y2={y(100)} className="baseline-line" />
         <text x={PAD.l - 6} y={y(100) + 4} textAnchor="end" className="tick-label">100</text>
+        {vMax - vMin > 0.005 ? (
+          <>
+            <text x={PAD.l - 6} y={y(vMax) + 4} textAnchor="end" className="tick-label">{vMax.toFixed(1)}</text>
+            <text x={PAD.l - 6} y={y(vMin) + 4} textAnchor="end" className="tick-label">{vMin.toFixed(1)}</text>
+          </>
+        ) : null}
         {timeTicks(tMin, tMax).map((t) => (
           <text key={t} x={x(t)} y={H - 8} textAnchor="middle" className="tick-label">{fmtTime(t)}</text>
         ))}
@@ -144,6 +150,11 @@ export function LiveChart({ series, mode, scores = [], onSelectTopic }: ChartPro
                 <path d={`${d}L${x(Date.parse(last.t)).toFixed(1)},${y(vMin).toFixed(1)}L${x(Date.parse(s.points[0]?.t ?? last.t)).toFixed(1)},${y(vMin).toFixed(1)}Z`} className="series-area" />
               ) : null}
               <path d={d} fill="none" stroke={color} strokeWidth={si === 0 ? 2.5 : 2} strokeDasharray={dash || undefined} />
+              {s.points.map((p) => (
+                <circle key={p.t} cx={x(Date.parse(p.t))} cy={y(p.index)} r={3.5} fill={color} stroke="#FFFFFF" strokeWidth={1.5}>
+                  <title>{`${s.title} ${fmtTime(Date.parse(p.t))}: index ${p.index.toFixed(1)}, total ${p.total}`}</title>
+                </circle>
+              ))}
               {last ? (
                 <text
                   x={W - PAD.r + 8}
