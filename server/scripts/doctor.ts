@@ -14,6 +14,7 @@ import { COLLECTORS, pingSource } from "../src/collectors/registry.js";
 import type { SourceKey } from "../src/sheets/schema.js";
 import { testJevConnection, testOmnirouteConnection } from "../src/llm/probe.js";
 import { createRealSheetsClient } from "../src/sheets/realClient.js";
+import { ComposioSheetsClient } from "../src/sheets/composioClient.js";
 import { buildCollectContext } from "./lib/context.js";
 
 loadEnvFiles();
@@ -96,13 +97,16 @@ if (config !== undefined) {
     warn("sheets tabs", "GOOGLE_SHEET_ID not set — run npm run setup.");
   } else {
     try {
-      const bundle = createRealSheetsClient(config.googleServiceAccountJsonPath);
-      const tabs = await bundle.client.getTabTitles(sheetId);
-      ok("sheets tabs", `${String(tabs.length)} tabs as ${bundle.serviceAccountEmail}`);
+      const client = config.composioApiKey !== ""
+        ? new ComposioSheetsClient(config.composioApiKey)
+        : createRealSheetsClient(config.googleServiceAccountJsonPath).client;
+      const tabs = await client.getTabTitles(sheetId);
+      const authLabel = config.composioApiKey !== "" ? "composio" : "service-account";
+      ok("sheets tabs", `${String(tabs.length)} tabs via ${authLabel}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/403|forbidden|permission/i.test(message)) {
-        fail("sheets tabs", `${message} → share the sheet with the service-account email as Editor (see npm run setup output).`);
+        fail("sheets tabs", `${message} → check Composio connection or share the sheet with the service-account email as Editor.`);
       } else {
         fail("sheets tabs", message);
       }
@@ -122,7 +126,7 @@ if (config !== undefined) {
       const probe = await testOmnirouteConnection({
         baseUrl: config.omnirouteBaseUrl,
         apiKey: config.omnirouteApiKey,
-        timeoutMs: 15000,
+        timeoutMs: 45000,
       });
       if (probe.ok) ok("omniroute /models", `${String(probe.models.length)} models`);
       else fail("omniroute /models", probe.error);

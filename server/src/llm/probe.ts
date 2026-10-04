@@ -41,7 +41,11 @@ export interface ProbeOptions {
 
 const SampleReply = z.object({ ok: z.boolean() });
 
-/** GET {base}/models — proves the gateway is up, keyed, and serving. */
+/**
+ * GET {base}/models — proves the gateway is up, keyed, and serving.
+ * Generous default timeout: gateways serving thousands of models answer
+ * slowly (observed 15 s+), and a timeout here shows up as a settings error.
+ */
 export async function testOmnirouteConnection(options: ProbeOptions): Promise<OmnirouteProbeResult> {
   const started = Date.now();
   const client = new LlmClient({
@@ -49,7 +53,7 @@ export async function testOmnirouteConnection(options: ProbeOptions): Promise<Om
     apiKey: options.apiKey ?? "",
     model: "",
     clientName: "extractor",
-    timeoutMs: options.timeoutMs ?? 15000,
+    timeoutMs: options.timeoutMs ?? 45000,
     maxAttempts: 1,
     fetchImpl: options.fetchImpl,
   });

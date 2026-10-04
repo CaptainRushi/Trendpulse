@@ -31,12 +31,17 @@ export interface ToolLockOp {
   slug: string;
   params: string[];
   optional?: boolean;
+  /** Logical arg name → the tool's real arg name (applied before every call). */
+  rename?: Record<string, string>;
+  /** Constant args the tool requires (applied only when the caller omitted them). */
+  defaults?: Record<string, unknown>;
 }
 
 export interface ToolLock {
   toolkit: string;
   version: string;
   generated_at: string;
+  note?: string;
   ops: Record<string, ToolLockOp>;
 }
 
@@ -76,7 +81,7 @@ export function checkToolLock(lock: ToolLock): string[] {
   const problems: string[] = [];
   if (!isPinnedVersion(lock.version)) {
     problems.push(
-      `toolkit version '${lock.version}' is not pinned — run npm run composio:discover with a valid key.`,
+      `toolkit version '${lock.version}' is not pinned — set a valid COMPOSIO_API_KEY, then run npm run composio:discover.`,
     );
   }
   const ops: Record<string, ToolLockOp | undefined> = lock.ops;
@@ -92,6 +97,22 @@ export function checkToolLock(lock: ToolLock): string[] {
 }
 
 /**
+ * Resolve a logical op to its lock entry, or throw COMPOSIO_TOOL_MISSING.
+ * Does NOT check the toolkit version — the fake gateway and the arg-mapping
+ * helper use it; only `requireOpSlug` is version-gated.
+ */
+export function resolveOp(lock: ToolLock, op: string): ToolLockOp {
+  const entry = lock.ops[op];
+  if (!entry || typeof entry.slug !== "string" || entry.slug === "") {
+    throw new ComposioError("COMPOSIO_TOOL_MISSING", `logical op '${op}' has no slug mapped — run npm run composio:discover.`);
+  }
+  if (DEPRECATED_SLUGS.includes(entry.slug)) {
+    throw new ComposioError("COMPOSIO_TOOL_MISSING", `logical op '${op}' maps to deprecated slug '${entry.slug}'.`);
+  }
+  return entry;
+}
+
+/**
  * Resolve a logical op to its slug, or throw COMPOSIO_TOOL_MISSING.
  * Every real execute call goes through here (CMP-03).
  */
@@ -100,5 +121,30 @@ export function requireOpSlug(lock: ToolLock, op: string): string {
   if (problems.length > 0) {
     throw new ComposioError("COMPOSIO_TOOL_MISSING", problems[0] as string);
   }
-  return (lock.ops[op] as ToolLockOp).slug;
+  return resolveOp(lock, op).slug;
+}
+
+/**
+ * Translate logical call args into the tool's real arg names: `defaults` fill
+ * anything the caller omitted, then `rename` rewrites the keys. Unknown caller
+ * keys pass through untouched so a tool gaining an optional field needs no
+ * lock change. This is the single place per-tool arg casing is decided.
+ */
+export function applyLockArgs(
+  lock: ToolLock,
+  op: string,
+  args: Record<string, unknown>,
+): { slug: string; args: Record<string, unknown> } {
+  const entry = resolveOp(lock, op);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (value === undefined) continue;
+    out[entry.rename?.[key] ?? key] = value;
+  }
+  if (entry.defaults) {
+    for (const [key, value] of Object.entries(entry.defaults)) {
+      if (out[key] === undefined) out[key] = value;
+    }
+  }
+  return { slug: entry.slug, args: out };
 }
