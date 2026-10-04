@@ -42,17 +42,30 @@ export function streamRunEvents(
     reply.raw.end();
     return;
   }
+  // Guarded write: a disconnected or finished stream must never throw
+  // ERR_STREAM_WRITE_AFTER_END into the EventBus emit (process crash).
+  // ponytail: single closed flag, no per-write try/catch — emit and 'close'
+  // cannot interleave mid-write on one thread; upgrade to counting refs if
+  // multiple writers ever share this response.
+  let closed = false;
+  const safeWrite = (chunk: string): void => {
+    if (closed || reply.raw.writableEnded || reply.raw.destroyed) return;
+    reply.raw.write(chunk);
+  };
   const unsubscribe = events.subscribe((event) => {
     if (event.runId !== runId) return;
-    reply.raw.write(formatSseEvent(event));
+    safeWrite(formatSseEvent(event));
     if (event.type === "done" || event.type === "error") {
-      reply.raw.end();
+      cleanup();
+      if (!reply.raw.writableEnded) reply.raw.end();
     }
   });
   const heartbeat = setInterval(() => {
-    reply.raw.write(": ping\n\n");
+    safeWrite(": ping\n\n");
   }, SSE_HEARTBEAT_MS);
   const cleanup = (): void => {
+    if (closed) return;
+    closed = true;
     clearInterval(heartbeat);
     unsubscribe();
   };
