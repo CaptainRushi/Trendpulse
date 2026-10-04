@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TrendPulse logo">
+  <g fill="none" stroke="#14291D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 38 H21 L29 13 L35 48 V55 Q35 61 41 61 H47"/>
+    <path d="M35 44 Q45 44 51 29"/>
+  </g>
+  <circle cx="54" cy="13" r="7.5" fill="#DCEB63"/>
+</svg>
