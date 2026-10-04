@@ -10,6 +10,8 @@ export interface PulseConfig {
   topN: number;
   maxRequests: number;
   retentionDays: number;
+  /** Demo override in ms (dev:fake --pulse-fast); undefined in normal runs. */
+  intervalMs?: number;
 }
 
 function boolOr(value: unknown, fallback: boolean): boolean {
@@ -23,11 +25,14 @@ function intOr(value: unknown, fallback: number, min: number, max: number): numb
 }
 
 export function resolvePulseConfig(config: TrendPulseConfig, settings: Map<string, unknown>): PulseConfig {
+  const intervalMsRaw = settings.get("pulse_interval_ms");
+  const intervalMs = typeof intervalMsRaw === "number" && Number.isInteger(intervalMsRaw) && intervalMsRaw >= 5_000 && intervalMsRaw <= 3_600_000 ? intervalMsRaw : undefined;
   return {
     enabled: boolOr(settings.get("pulse_enabled"), config.pulseEnabled),
     intervalMin: intOr(settings.get("pulse_interval_min"), config.pulseIntervalMin, 5, 60),
     topN: intOr(settings.get("pulse_top_n"), config.pulseTopN, 1, 10),
     maxRequests: intOr(settings.get("pulse_max_requests"), config.pulseMaxRequests, 1, 1000),
     retentionDays: intOr(settings.get("pulse_retention_days"), config.pulseRetentionDays, 1, 365),
+    ...(intervalMs === undefined ? {} : { intervalMs }),
   };
 }

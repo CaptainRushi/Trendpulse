@@ -21,6 +21,8 @@ export interface SamplerDeps {
   today: () => string;
   nowIso: () => string;
   log?: (message: string) => void;
+  /** Demo override (dev:fake --pulse-fast); defaults to intervalMin minutes. */
+  intervalMs?: number;
 }
 
 export interface CycleResult {
@@ -68,7 +70,7 @@ export class PulseSampler {
 
   start(): void {
     if (this.timer) return;
-    const ms = this.deps.config.intervalMin * 60_000;
+    const ms = this.deps.intervalMs ?? this.deps.config.intervalMin * 60_000;
     this.timer = setInterval(() => {
       void this.runCycle("timer").catch(() => undefined);
     }, ms);
