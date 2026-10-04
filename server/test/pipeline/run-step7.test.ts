@@ -271,7 +271,8 @@ describe("STEP 7 orchestrator", () => {
       expect(types).toContain("done");
       // Finalize's own done event precedes its stage-done marker.
       expect(types.slice(-2)).toEqual(["done", "stage"]);
-      expect(live.every((e) => e.runId === summary.runId)).toBe(true);
+      // Pulse index events ride the shared bus under runId "pulse" (Doc 16).
+      expect(live.filter((e) => e.runId !== "pulse").every((e) => e.runId === summary.runId)).toBe(true);
       const replay = events.history(50);
       expect(replay.length).toBeLessThanOrEqual(50);
       expect(replay.map((e) => e.seq)).toEqual(live.slice(-50).map((e) => e.seq));

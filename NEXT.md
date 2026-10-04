@@ -10,6 +10,17 @@ Day-1 board: `npm run verify` **23/23 PASS** (fake). Live: 12 pass · 1 fail · 
    the wrong-Jev-key fallback run, and real topics on Today.
 2. **OmniRoute**: start the gateway on `http://localhost:20128/v1`
    (F32 live currently FAILs: not reachable; extraction + fallback ride it).
+   (2026-10-04: a real OmniRoute gateway IS now running on :20128 — re-run
+   F32/verify:live; health.test was made hermetic because of it.)
+
+## Pulse live graph (Doc 16, built 2026-10-04, commits pulse-G0..G5)
+- Today shows the top-topic hero + growth chart (sampled HN points / GH
+  stars, zero AI/Sheets calls). Demo: `npm run dev:fake [--pulse-fast]`
+  (server workspace), then `npm run dev` — hero appears immediately.
+- Sampler runs on boot when PULSE_ENABLED. Manual cycle:
+  POST /api/live/sample-now. Status: GET /api/integrations/composio/status
+  (preflight blockers) — note Composio lock still UNPINNED (needs valid key).
+- Cut if wanted later: row sparklines, reddit full refresher, mirror reads.
 
 ## Day 2 — hardening + packaging (docs/12 §9)
 - **P3b** Scrapling sidecar: recipes, adaptive healing (S01–S06 are stubs).

@@ -6,7 +6,11 @@ import { testContext } from "./api/helpers.js";
 
 describe("GET /api/health", () => {
   it("returns the full contract with dependency states", async () => {
-    const t = testContext();
+    // Hermetic: the LLM probes must fail by construction (discard port),
+    // not because the developer happens to have no gateway running.
+    const t = testContext({
+      config: loadConfig({ GOOGLE_SHEET_ID: "test-sheet", OMNIROUTE_BASE_URL: "http://127.0.0.1:9/v1" }),
+    });
     try {
       const app = await buildApp(t.ctx);
       try {

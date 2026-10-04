@@ -445,3 +445,13 @@ Conflicts: none — Doc 16 §4 accepts unwired status (temp PULSE-nn names, no FR/p
 - **Deviation:** dev:fake does not exist (DECISIONS R0: scheduled INF-07) — G5 builds only the minimal seed the demo needs, not the full mode.
 - **Deviation:** samples live in SQLite topic_samples (spec §1), never mirror_sorted — no read-path rework.
 - **Deviation:** PULSE ?????? refresher is OAuth-only stub per spec; cut first if late (spec cut order).
+
+## 2026-10-04 â€” pulse-G6 close-out (Doc 16, ponytail full)
+
+- **Done:** G0 plan + locked definitions; G1 index/sampler/persist hook (PULSE-01..09); G2 HN/GH/reddit refreshers + live-recorded fixtures (PULSE-10..14); G3 today/top, live/samples, live/stream (Last-Event-ID), sample-now 409/429 (PULSE-15..19); G4 hero + hand SVG chart + stream hooks (PULSE-20..30); G5 fake-seed + --pulse-fast + e2e (PULSE-31..33, 6/6, shots in test-runs/evidence/2026-10-04/).
+- **Gates:** server lint 0, typecheck 0, tests 496/496; web lint 0, typecheck 0, tests 36/36; shared typecheck 0. discover --check FAILS as designed (lock UNPINNED â€” WAITING on a valid COMPOSIO_API_KEY, unrelated to pulse).
+- **Live-verified (real HN + GitHub endpoints, demo-seeded topics):** cycle ok, 3 requests, demo-t1 index 100.03 total 90355 (GH stars moved 90222â†’~90251 live), 1 GitHub API call (ETag arms future 304s). Demo baselines were synthetic â€” real growth semantics proven by PULSE-01/14, not by this run.
+- **Deviations:** REST transport (no @composio/core â€” same slugs, verified shapes; Â§11 MCP unaffected); samples in topic_samples, no mirror rework; SHEETS_READ_STRATEGY default stays ttl; minimal fake-seed instead of full dev:fake (R0 INF-07 still open); sparklines + reddit full refresher cut (spec cut order); no Figure/Button (don't exist â€” used Panel/Pill/SidePanel); no d3 (hand SVG); migration 007 not 006 (taken); PULSE-29 targeted not axe-in-JSDOM; PULSE-30 structural (JSDOM has no layout).
+- **Collateral fixes (own tests updated):** INF-02 version lists (+007/+008); RUN-12 scoped to non-pulse bus events; health.test hermetic (discard-port LLM probes â€” was failing because a real OmniRoute gateway is now running on :20128).
+- **Verified vs assumed:** HN item + GH repo shapes VERIFIED against live responses (fixtures); Composio REST auth-config/connected-account endpoint paths ASSUMED (key still invalid â€” C6 WAITING); GH 60/hr quota + 304-non-counting ASSUMED (code honors ETags; not load-tested); reddit OAuth path untested (stub).
+- **Still needs the user:** valid COMPOSIO_API_KEY + Google connect (unchanged); share sheet for service-account path (unchanged); `gh auth login` for private repos; login-state channels (Twitter/XHS/Reddit/etc.) on request.
