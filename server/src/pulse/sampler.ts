@@ -114,7 +114,12 @@ export class PulseSampler {
         }
         const outcome = await this.refreshItems(items, config, today);
         requests += outcome.requests;
-        if (outcome.failed === items.length) {
+        const attempted = items.length - outcome.skipped;
+        if (attempted === 0) {
+          skipped += 1;
+          continue;
+        }
+        if (outcome.failed === attempted) {
           errors += 1;
           continue;
         }
@@ -125,7 +130,7 @@ export class PulseSampler {
           skipped += 1;
           continue;
         }
-        insertSample.run(topic.topicId, startedAt, index, currentTotal, items.length - outcome.failed, outcome.failed, JSON.stringify(outcome.detail));
+        insertSample.run(topic.topicId, startedAt, index, currentTotal, attempted - outcome.failed, outcome.failed, JSON.stringify(outcome.detail));
         sampled += 1;
         this.deps.emit("sample", { topic_id: topic.topicId, t: startedAt, index, total: currentTotal });
       }
@@ -143,10 +148,11 @@ export class PulseSampler {
     items: RefreshItem[],
     config: PulseConfig,
     today: string,
-  ): Promise<{ values: Map<string, number>; failed: number; requests: number; detail: Record<string, unknown>[] }> {
+  ): Promise<{ values: Map<string, number>; failed: number; skipped: number; requests: number; detail: Record<string, unknown>[] }> {
     const values = new Map<string, number>();
     const detail: Record<string, unknown>[] = [];
     let failed = 0;
+    let skipped = 0;
     let requests = 0;
     const bySource = new Map<string, RefreshItem[]>();
     for (const item of items) {
@@ -154,10 +160,12 @@ export class PulseSampler {
       list.push(item);
       bySource.set(item.source, list);
     }
+    const byId = new Map(items.map((item) => [item.itemId, item]));
     for (const [source, group] of bySource) {
       const refresher = this.deps.refreshers.find((r) => r.source === source);
       if (!refresher) {
-        failed += group.length;
+        for (const item of group) detail.push({ item_id: item.itemId, skipped: "no live metric" });
+        skipped += group.length;
         continue;
       }
       const room = config.maxRequests - requests;
@@ -171,9 +179,16 @@ export class PulseSampler {
         if (outcome.value !== undefined) {
           values.set(outcome.itemId, outcome.value);
           detail.push({ item_id: outcome.itemId, value: outcome.value });
+        } else if (outcome.unchanged === true) {
+          const last = byId.get(outcome.itemId)?.lastValue ?? 0;
+          values.set(outcome.itemId, last);
+          detail.push({ item_id: outcome.itemId, unchanged: true, value: last });
+        } else if (outcome.skipped !== undefined) {
+          skipped += 1;
+          detail.push({ item_id: outcome.itemId, skipped: outcome.skipped });
         } else {
           failed += 1;
-          detail.push({ item_id: outcome.itemId, error: outcome.error ?? outcome.skipped ?? "failed" });
+          detail.push({ item_id: outcome.itemId, error: outcome.error ?? "failed" });
           if (outcome.error && /\b429\b/.test(outcome.error)) {
             const key = `${source}|${today}`;
             const count = (this.rateHits.get(key) ?? 0) + 1;
@@ -183,6 +198,6 @@ export class PulseSampler {
         }
       }
     }
-    return { values, failed, requests, detail };
+    return { values, failed, skipped, requests, detail };
   }
 }

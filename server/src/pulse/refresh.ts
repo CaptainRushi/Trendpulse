@@ -8,6 +8,8 @@ export interface RefreshItem {
   itemId: string;
   source: string;
   url: string;
+  /** Collector's native id (HN numeric id); "" when unknown. */
+  sourceItemId: string;
   /** engagement_score when the topic was written (t0). */
   baseline: number;
   /** Last known current value (carry-forward when a cycle fails). */
@@ -18,6 +20,8 @@ export interface RefreshOutcome {
   itemId: string;
   /** Absent when the refresh failed (caller carries lastValue forward). */
   value?: number;
+  /** 304 / not-modified: caller reuses lastValue and counts it sampled. */
+  unchanged?: boolean;
   error?: string;
   skipped?: string;
 }

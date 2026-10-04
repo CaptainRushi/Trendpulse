@@ -33,18 +33,20 @@ interface ItemBaseline {
   itemId: string;
   source: string;
   url: string;
+  sourceItemId: string;
   baseline: number;
 }
 
-function parsePayload(json: string): { url: string; engagement: number } {
+function parsePayload(json: string): { url: string; engagement: number; sourceItemId: string } {
   try {
-    const parsed = JSON.parse(json) as { url?: unknown; engagement_score?: unknown };
+    const parsed = JSON.parse(json) as { url?: unknown; engagement_score?: unknown; source_item_id?: unknown };
     return {
       url: typeof parsed.url === "string" ? parsed.url : "",
       engagement: typeof parsed.engagement_score === "number" ? parsed.engagement_score : 0,
+      sourceItemId: typeof parsed.source_item_id === "string" ? parsed.source_item_id : "",
     };
   } catch {
-    return { url: "", engagement: 0 };
+    return { url: "", engagement: 0, sourceItemId: "" };
   }
 }
 
@@ -56,7 +58,7 @@ export function readBaselines(db: StateDb, runDate: string): Map<string, ItemBas
   const out = new Map<string, ItemBaseline>();
   for (const row of rows) {
     const payload = parsePayload(row.payload_json);
-    out.set(row.id, { itemId: row.id, source: row.source, url: payload.url, baseline: payload.engagement });
+    out.set(row.id, { itemId: row.id, source: row.source, url: payload.url, sourceItemId: payload.sourceItemId, baseline: payload.engagement });
   }
   return out;
 }
@@ -68,7 +70,7 @@ export function pickSampledItems(evidenceIds: string[], baselines: Map<string, I
     .filter((b): b is ItemBaseline => !!b && isRefreshableSource(b.source))
     .sort((a, b) => b.baseline - a.baseline)
     .slice(0, 3)
-    .map((b) => ({ itemId: b.itemId, source: b.source, url: b.url, baseline: b.baseline, lastValue: b.baseline }));
+    .map((b) => ({ itemId: b.itemId, source: b.source, url: b.url, sourceItemId: b.sourceItemId, baseline: b.baseline, lastValue: b.baseline }));
 }
 
 export interface WriteSetResult {
