@@ -76,11 +76,12 @@ export function checkToolLock(lock: ToolLock): string[] {
   const problems: string[] = [];
   if (!isPinnedVersion(lock.version)) {
     problems.push(
-      `toolkit version '${String(lock.version)}' is not pinned — run npm run composio:discover with a valid key.`,
+      `toolkit version '${lock.version}' is not pinned — run npm run composio:discover with a valid key.`,
     );
   }
+  const ops: Record<string, ToolLockOp | undefined> = lock.ops;
   for (const op of REQUIRED_OPS) {
-    const entry = lock.ops?.[op];
+    const entry = ops[op];
     if (!entry || typeof entry.slug !== "string" || entry.slug === "") {
       problems.push(`logical op '${op}' has no slug mapped.`);
     } else if (DEPRECATED_SLUGS.includes(entry.slug)) {
