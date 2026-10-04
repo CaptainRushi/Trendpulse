@@ -6,6 +6,57 @@ export interface ApiErrorBody {
   error: { code: string; message: string; hint?: string };
 }
 
+/** Doc 16 live graph contract (mirrors @trendpulse/shared Pulse* schemas). */
+export interface PulseTopicSummary {
+  topic_id: string;
+  rank: number;
+  title: string;
+  summary: string;
+  why_trending: string;
+  first_angle: string;
+  category: string;
+  momentum: string;
+  score: number;
+  source_count: number;
+  items_count: number;
+  has_live_metric: boolean;
+}
+
+export interface PulseTodayTop {
+  date: string;
+  from_previous_day: boolean;
+  topic: PulseTopicSummary | null;
+  runner_ups: PulseTopicSummary[];
+  live: {
+    enabled: boolean;
+    last_sample_at: string | null;
+    next_sample_at: string | null;
+    interval_min: number;
+    status: "live" | "paused" | "stale";
+  };
+}
+
+export interface PulsePoint {
+  t: string;
+  index: number;
+  total: number;
+}
+
+export interface PulseSeries {
+  topic_id: string;
+  title: string;
+  rank: number;
+  has_live_metric: boolean;
+  sources: string[];
+  points: PulsePoint[];
+}
+
+export interface PulseSamples {
+  date: string;
+  baseline_at: string | null;
+  series: PulseSeries[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;

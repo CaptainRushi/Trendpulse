@@ -1,5 +1,5 @@
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -14,6 +14,9 @@ import {
   useTopicEvidence,
   useTrends,
 } from "../hooks/useApi";
+import { useLiveSeries, useLiveStream, useSampleNow, useTopToday } from "../hooks/useLive";
+import type { PulseTopicSummary } from "../lib/api";
+import { LiveChart } from "../components/LiveChart";
 import { useTopicFilters } from "../hooks/useFilters";
 import { copyToClipboard } from "../lib/clipboard";
 import { todayAppDate } from "../lib/format";
@@ -162,6 +165,8 @@ export function Today(): React.JSX.Element {
         ) : null}
       </section>
 
+      <TopPulseSection onOpen={setOpenId} />
+
       {latest.data ? (
         <section aria-label="Latest run stages">
           <FlowStrip stages={groupedFlow(latest.data.stages)} />
@@ -295,6 +300,200 @@ export function Today(): React.JSX.Element {
         />
       ) : null}
     </div>
+  );
+}
+
+function useNowMs(stepMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, stepMs);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [stepMs]);
+  return now;
+}
+
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (): void => {
+      setReduced(query.matches);
+    };
+    query.addEventListener("change", onChange);
+    return () => {
+      query.removeEventListener("change", onChange);
+    };
+  }, []);
+  return reduced;
+}
+
+function fmtClock(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function TopPulseSection({ onOpen }: { onOpen: (id: string) => void }): React.JSX.Element | null {
+  const top = useTopToday();
+  const [modeOverride, setModeOverride] = useState<"live" | "scores" | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const prevId = useRef<string | null>(null);
+  const reducedMotion = useReducedMotion();
+  const now = useNowMs();
+  const toast = useToast();
+  const series = useLiveSeries(top.data?.date ?? null);
+  const stream = useLiveStream(top.data?.date ?? null);
+  const sampleNow = useSampleNow();
+
+  const payload = top.data;
+  const topic = payload?.topic ?? null;
+
+  useEffect(() => {
+    if (topic && prevId.current !== null && prevId.current !== topic.topic_id) {
+      setAnnouncement(`new top topic: ${topic.title}`);
+      if (!reducedMotion) {
+        const timer = setTimeout(() => {
+          setAnnouncement((current) => (current.startsWith("new top topic") ? "" : current));
+        }, 60_000);
+        return () => {
+          clearTimeout(timer);
+        };
+      }
+    }
+    if (topic) prevId.current = topic.topic_id;
+    return undefined;
+  }, [topic, reducedMotion]);
+
+  const mode = modeOverride ?? (topic && !topic.has_live_metric ? "scores" : "live");
+
+  if (top.isPending) {
+    return (
+      <section aria-label="Top topic today">
+        <SkeletonGrid />
+      </section>
+    );
+  }
+  if (top.isError || !payload) {
+    return (
+      <section aria-label="Top topic today">
+        <ErrorState error={top.error} onRetry={() => { void top.refetch(); }} />
+      </section>
+    );
+  }
+  if (!topic) {
+    return (
+      <section aria-label="Top topic today">
+        <EmptyNudge
+          title="no top topic yet"
+          hint="run the pipeline and today's top topic lands here."
+          action={<Link className="btn btn-primary" to="/runs">run now</Link>}
+        />
+      </section>
+    );
+  }
+
+  const live = payload.live;
+  const countdown = live.next_sample_at ? Math.max(0, Math.round((Date.parse(live.next_sample_at) - now) / 1000)) : null;
+  const badge =
+    stream.status === "polling"
+      ? "reconnecting · polling every 30s"
+      : stream.status === "paused"
+        ? "paused"
+        : stream.status === "reconnecting"
+          ? "reconnecting"
+          : live.status === "stale"
+            ? `stale · last sample ${fmtClock(live.last_sample_at)}`
+            : live.status === "paused"
+              ? "paused · sampler disabled"
+              : `live · sampled ${fmtClock(live.last_sample_at)}${countdown !== null ? ` · next in ${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(countdown % 60).padStart(2, "0")}` : ""}`;
+
+  const chartSeries = (series.data?.series ?? []).map((s) => ({ ...s, points: s.points.slice(-300) }));
+  const scoreBars = [topic, ...payload.runner_ups].map((t: PulseTopicSummary) => ({ topic_id: t.topic_id, title: t.title, score: t.score }));
+
+  return (
+    <section aria-label="Top topic today" className={announcement.startsWith("new top topic") && !reducedMotion ? "pulse-flash" : undefined}>
+      <div className="pulse-grid">
+        <div className="pulse-card">
+          <Eyebrow>top topic today{payload.from_previous_day ? ` · from ${payload.date}` : ""}</Eyebrow>
+          <h2>
+            <Hl>{topic.title}</Hl>
+          </h2>
+          <p>{topic.summary}</p>
+          <p className="form-hint">{topic.why_trending}</p>
+          <div className="topic-meta">
+            <Pill>{topic.category.toLowerCase()}</Pill>
+            <Pill>{topic.momentum}</Pill>
+            <span className="form-hint num">score {topic.score}</span>
+          </div>
+          <p className="form-hint">
+            {topic.source_count} {topic.source_count === 1 ? "source" : "sources"} · {topic.items_count} {topic.items_count === 1 ? "item" : "items"}
+          </p>
+          {topic.first_angle ? (
+            <div className="angle">
+              <span>{topic.first_angle}</span>
+              <button type="button" className="btn btn-ghost" aria-label="Copy first angle" onClick={() => { copyToClipboard(topic.first_angle); }}>
+                copy
+              </button>
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button type="button" className="btn btn-ghost" onClick={() => { onOpen(topic.topic_id); }}>
+              open details
+            </button>
+          </div>
+        </div>
+        <div className="pulse-graph">
+          <div className="pulse-graph-head">
+            <Eyebrow>growth since {fmtClock(series.data?.baseline_at ?? live.last_sample_at)}</Eyebrow>
+            <span className="mono" role="status" aria-label="live status">{badge}</span>
+          </div>
+          {!payload.from_previous_day && topic.has_live_metric ? (
+            <>
+              <LiveChart series={chartSeries} mode={mode} scores={scoreBars} onSelectTopic={onOpen} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                <div role="group" aria-label="Chart view">
+                  <button type="button" className="chip" data-active={mode === "live" || undefined} onClick={() => { setModeOverride("live"); }}>
+                    live
+                  </button>
+                  <button type="button" className="chip" data-active={mode === "scores" || undefined} onClick={() => { setModeOverride("scores"); }}>
+                    scores
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={sampleNow.isPending}
+                  onClick={() => {
+                    sampleNow.mutate(undefined, {
+                      onError: (error) => {
+                        toast({ tone: "bad", message: error.message });
+                      },
+                    });
+                  }}
+                >
+                  sample now
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <LiveChart series={[]} mode="scores" scores={scoreBars} onSelectTopic={onOpen} />
+              <p className="form-hint" style={{ marginTop: 8 }}>
+                {payload.from_previous_day ? `showing ${payload.date} — no live line for past days.` : "no live numbers for this topic's sources."}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="visually-hidden" aria-live="polite">{announcement}</div>
+    </section>
   );
 }
 
