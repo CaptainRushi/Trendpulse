@@ -20,6 +20,15 @@ export interface EffectiveSettings {
 }
 
 /** key → parsed value_json. Corrupt rows throw naming the key. */
+/** Upsert one settings row (ids and status live here, never secrets). */
+export function writeSetting(db: StateDb, key: string, value: unknown, isSecret = false): void {
+  db.prepare(
+    "INSERT INTO settings (key, value_json, is_secret) VALUES (?, ?, ?) " +
+      "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, is_secret = excluded.is_secret, " +
+      "updated_at = datetime('now')",
+  ).run(key, JSON.stringify(value), isSecret ? 1 : 0);
+}
+
 export function readSettingsMap(db: StateDb): Map<string, unknown> {
   const rows = db.prepare("SELECT key, value_json FROM settings").all() as {
     key: string;
