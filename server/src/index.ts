@@ -96,9 +96,11 @@ async function main(): Promise<void> {
   // Pulse sampler (Doc 16): HTTP-only refresh cycles on a timer. Boot never
   // blocks on it; a dead network just yields skipped cycles.
   const pulseHttp = new HttpClient({ userAgent: config.userAgent, maxAttempts: 1, cache: sqliteEtagStore(db) });
+  const pulseConfig = resolvePulseConfig(config, readSettingsMap(db));
   const pulse = new PulseSampler({
     db,
-    config: resolvePulseConfig(config, readSettingsMap(db)),
+    config: pulseConfig,
+    ...(pulseConfig.intervalMs === undefined ? {} : { intervalMs: pulseConfig.intervalMs }),
     refreshers: buildRefreshers({
       http: pulseHttp,
       ...(config.githubToken !== "" ? { githubToken: config.githubToken } : {}),

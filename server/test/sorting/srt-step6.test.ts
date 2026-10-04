@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { Classifier, ClassifyResult } from "../../src/llm/classifier.js";
 import { JevClassifier } from "../../src/llm/classifier.js";
 import { LlmClient } from "../../src/llm/client.js";
-import { JevClient } from "../../src/llm/jev.js";
+import { JevClient, JevTimeoutError } from "../../src/llm/jev.js";
 import type { JevAnswers, JevQuestions, JevState } from "../../src/llm/jev.js";
 import { applyMigrations, openDatabase } from "../../src/db/sqlite.js";
 import { titleSimilarity } from "../../src/pipeline/dedupe.js";
@@ -352,7 +352,7 @@ describe("STEP 6 sorter", () => {
     const items = [makeItem({ title: "Fallback story one" }), makeItem({ title: "Fallback story two" })];
     const seen = new Map(items.map((i) => [i.id, "2026-09-30"]));
     const failing = new StubClassifier("dead-jev", () => {
-      throw new Error("jev down");
+      throw new JevTimeoutError("jev down");
     });
     const fallback = new StubClassifier("fb", defaultAnswers, "fallback");
     const options = sortOptions({ classifier: failing, fallback, fallbackEnabled: true });

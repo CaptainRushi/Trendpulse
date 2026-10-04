@@ -143,10 +143,10 @@ async function main(): Promise<void> {
   values.set("GOOGLE_SERVICE_ACCOUNT_JSON_PATH", keyPath);
   const sheetId = await ask("Google Sheet ID (from the sheet URL)", get("GOOGLE_SHEET_ID", ""));
   values.set("GOOGLE_SHEET_ID", sheetId);
-  if (sheetId !== "" && serviceEmail !== "") {
+  if (sheetId !== "") {
     try {
-      const bundle = createRealSheetsClient(resolvedKeyPath);
-      const tabs = await bundle.client.getTabTitles(sheetId);
+      const client = createRealSheetsClient(resolvedKeyPath).client;
+      const tabs = await client.getTabTitles(sheetId);
       output.write(`  Sheet reachable — tabs: ${tabs.length === 0 ? "(empty)" : tabs.join(", ")}.\n`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

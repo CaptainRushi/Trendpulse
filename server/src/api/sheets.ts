@@ -13,7 +13,7 @@ function requireSheetId(ctx: AppContext): string {
       400,
       "SETUP_INCOMPLETE",
       "Google Sheet is not configured.",
-      "Set GOOGLE_SHEET_ID (or settings sheet_id) and share the sheet with the service-account email as Editor.",
+      "Set GOOGLE_SHEET_ID and share the sheet with the service-account email as Editor.",
     );
   }
   return ctx.config.googleSheetId;

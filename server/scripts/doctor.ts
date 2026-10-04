@@ -13,7 +13,7 @@ import { applyMigrations, openDatabase, type StateDb } from "../src/db/sqlite.js
 import { COLLECTORS, pingSource } from "../src/collectors/registry.js";
 import type { SourceKey } from "../src/sheets/schema.js";
 import { testJevConnection, testOmnirouteConnection } from "../src/llm/probe.js";
-import { resolveSheetsClient } from "../src/sheets/resolve.js";
+import { createRealSheetsClient } from "../src/sheets/realClient.js";
 import { buildCollectContext } from "./lib/context.js";
 
 loadEnvFiles();
@@ -96,13 +96,13 @@ if (config !== undefined) {
     warn("sheets tabs", "GOOGLE_SHEET_ID not set — run npm run setup.");
   } else {
     try {
-      const resolved = resolveSheetsClient(config);
-      const tabs = await resolved.client.getTabTitles(sheetId);
-      ok("sheets tabs", `${String(tabs.length)} tabs via ${resolved.via}`);
+      const bundle = createRealSheetsClient(config.googleServiceAccountJsonPath);
+      const tabs = await bundle.client.getTabTitles(sheetId);
+      ok("sheets tabs", `${String(tabs.length)} tabs as ${bundle.serviceAccountEmail}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/403|forbidden|permission/i.test(message)) {
-        fail("sheets tabs", `${message} → check Composio connection or share the sheet with the service-account email as Editor.`);
+        fail("sheets tabs", `${message} → share the sheet with the service-account email as Editor (see npm run setup output).`);
       } else {
         fail("sheets tabs", message);
       }

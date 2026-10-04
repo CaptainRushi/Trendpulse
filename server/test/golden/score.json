@@ -1,0 +1,6 @@
+{
+  "input_items": 10,
+  "expected_topics": 2,
+  "expected_scores": [85, 72],
+  "description": "Golden test: 10 items → 2 topics, scores 85 and 72 (TRD §7 formula)"
+}

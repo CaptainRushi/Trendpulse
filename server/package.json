@@ -16,9 +16,6 @@
     "collect": "tsx scripts/collect.ts",
     "check:llm": "tsx scripts/check-llm.ts",
     "sheets:init": "tsx scripts/sheets-init.ts",
-    "composio:discover": "tsx scripts/composio/discover.ts",
-    "composio:setup": "tsx scripts/composio/setup.ts",
-    "live:composio": "tsx scripts/composio/live.ts",
     "dev:fake": "tsx scripts/fake-seed.ts",
     "pipeline": "tsx scripts/run.ts",
     "rebuild-state": "tsx scripts/rebuild-state.ts"

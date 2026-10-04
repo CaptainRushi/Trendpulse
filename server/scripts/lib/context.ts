@@ -19,11 +19,18 @@ export function buildCollectContext(runId: string, limitOverride?: number): Coll
     userAgent: config.userAgent,
     limiter: new DomainRateLimiter({}),
   });
-  const llm: LlmExtractor = config.omnirouteApiKey
+  const llm: LlmExtractor = config.omnirouteApiKey && config.omnirouteExtractModel
     ? createExtractor(createExtractorClient(config))
     : {
         model: "(unset)",
-        extract: () => Promise.reject(new Error("OMNIROUTE_API_KEY not set — webpage extraction skipped")),
+        extract: () =>
+          Promise.reject(
+            new Error(
+              config.omnirouteApiKey
+                ? "OMNIROUTE_EXTRACT_MODEL not set — webpage extraction skipped"
+                : "OMNIROUTE_API_KEY not set — webpage extraction skipped",
+            ),
+          ),
       };
   return {
     runId,

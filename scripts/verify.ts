@@ -65,8 +65,8 @@ async function runProbe(probe: LiveProbe): Promise<Part> {
     const config = loadConfig();
     if (config.googleSheetId === "") return { status: "SKIP", detail: "GOOGLE_SHEET_ID not set" };
     try {
-      const { resolveSheetsClient } = await import("../server/src/sheets/resolve.js");
-      const client = resolveSheetsClient(config).client;
+      const { createRealSheetsClient } = await import("../server/src/sheets/realClient.js");
+      const client = createRealSheetsClient(config.googleServiceAccountJsonPath).client;
       const tabs = await timeout(25000, "sheets timed out", () => client.getTabTitles(config.googleSheetId));
       return tabs.length >= 4
         ? { status: "PASS", detail: `${tabs.length} tabs` }
