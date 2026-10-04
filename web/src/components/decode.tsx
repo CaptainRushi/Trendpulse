@@ -68,6 +68,7 @@ export function FlowStrip({ stages }: { stages: FlowStage[] }): React.JSX.Elemen
           key={stage.key}
           data-status={stage.status}
           {...(stage.jev ? { "data-jev": "true" } : {})}
+          {...(stage.status === "running" ? { "aria-current": "step" as const } : {})}
         >
           <span className="flow-n" aria-hidden="true">
             {index + 1}

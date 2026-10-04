@@ -151,15 +151,15 @@ export function LiveChart({ series, mode, scores = [], onSelectTopic }: ChartPro
               ) : null}
               <path d={d} fill="none" stroke={color} strokeWidth={si === 0 ? 2.5 : 2} strokeDasharray={dash || undefined} />
               {s.points.map((p) => (
-                <circle key={p.t} cx={x(Date.parse(p.t))} cy={y(p.index)} r={3.5} fill={color} stroke="#FFFFFF" strokeWidth={1.5}>
-                  <title>{`${s.title} ${fmtTime(Date.parse(p.t))}: index ${p.index.toFixed(1)}, total ${p.total}`}</title>
+                <circle key={p.t} cx={x(Date.parse(p.t))} cy={y(p.index)} r={3.5} fill={color} stroke={tokens.panel} strokeWidth={1.5}>
+                  <title>{`${s.title} ${fmtTime(Date.parse(p.t))}: index ${p.index.toFixed(1)}, total ${String(p.total)}`}</title>
                 </circle>
               ))}
               {last ? (
                 <text
                   x={W - PAD.r + 8}
                   y={y(last.index) + (si - (visible.length - 1) / 2) * 13}
-                  aria-label={`${s.title} ${Math.round(last.index - 100) >= 0 ? "+" : ""}${Math.round(last.index - 100)} percent`}
+                  aria-label={`${s.title} ${Math.round(last.index - 100) >= 0 ? "+" : ""}${String(Math.round(last.index - 100))} percent`}
                   className="end-label"
                   onClick={() => onSelectTopic?.(s.topic_id)}
                   onKeyDown={(e) => { if (e.key === "Enter") onSelectTopic?.(s.topic_id); }}

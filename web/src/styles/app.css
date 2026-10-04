@@ -1121,6 +1121,10 @@ textarea.input {
   .pulse-flash {
     animation: pulse-flash 1.2s ease-out 1;
   }
+
+  .flow-strip li[data-status="running"] .flow-n {
+    animation: flow-pulse 1.1s ease-in-out infinite;
+  }
 }
 
 @keyframes pulse-flash {
@@ -1137,4 +1141,15 @@ textarea.input {
 /* pulse hero title: repo/tool names are single long tokens — wrap anywhere */
 .pulse-card h2 {
   overflow-wrap: anywhere;
+}
+
+@keyframes flow-pulse {
+  0%,
+  100% {
+    background: var(--panel);
+  }
+  50% {
+    background: var(--lime);
+    border-color: var(--lime);
+  }
 }

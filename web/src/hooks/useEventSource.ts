@@ -1,5 +1,6 @@
 /** Live run events over SSE. Reconnects with backoff; exposes health. */
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export interface RunEvent {
   run_id: string;
@@ -16,6 +17,7 @@ export function useRunEvents(runId: string | null): EventSourceState {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const retryRef = useRef(0);
+  const client = useQueryClient();
 
   useEffect(() => {
     if (!runId || typeof EventSource === "undefined") return;
@@ -48,6 +50,10 @@ export function useRunEvents(runId: string | null): EventSourceState {
           try {
             const data = JSON.parse(message.data) as RunEvent;
             setEvents((prev) => [...prev.slice(-199), data]);
+            // Stage changes move the FlowStrip live (esp. the sorter stages).
+            if (type === "stage" || type === "done" || type === "error") {
+              void client.invalidateQueries({ queryKey: ["run", runId] });
+            }
             if (type === "done" || type === "error") source?.close();
           } catch {
             // Ignore malformed frames.
