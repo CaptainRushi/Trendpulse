@@ -28,6 +28,7 @@ export function makeRawItem(overrides: Partial<Raw> = {}): Raw {
     merged_sources: [],
     extraction_model: null,
     source_label: null,
+    target_category: null,
     ...overrides,
   });
 }

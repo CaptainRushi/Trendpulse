@@ -101,11 +101,14 @@ export class SheetsRepo {
 
   /**
    * Create missing tabs + header rows. Idempotent: existing non-empty headers
-   * are never overwritten (a human may have annotated them).
+   * are never overwritten (a human may have annotated them). Short headers
+   * that match the registry prefix gain only the missing trailing cells
+   * (CATRUN-10: sheet upgrades itself when the registry grows).
    */
-  async init(): Promise<{ created: string[]; headersWritten: string[] }> {
+  async init(): Promise<{ created: string[]; headersWritten: string[]; upgraded: string[] }> {
     const created: string[] = [];
     const headersWritten: string[] = [];
+    const upgraded: string[] = [];
     const titles = await this.client.getTabTitles(this.spreadsheetId);
     for (const tab of REQUIRED_TABS) {
       if (!titles.includes(tab)) {
@@ -113,14 +116,22 @@ export class SheetsRepo {
         created.push(tab);
       }
       const first = await this.client.getFirstRow(this.spreadsheetId, tab);
+      const headers = TAB_HEADERS[tab];
+      if (headers === undefined) throw new Error(`unknown tab '${tab}' has no header definition`);
       if (first === null || first.length === 0 || first.every((c) => c === "")) {
-        const headers = TAB_HEADERS[tab];
-        if (headers === undefined) throw new Error(`unknown tab '${tab}' has no header definition`);
         await this.client.writeFirstRow(this.spreadsheetId, tab, [...headers]);
         headersWritten.push(tab);
+      } else if (first.length < headers.length && headers.slice(0, first.length).every((h, i) => h === first[i])) {
+        const missing = headers.slice(first.length);
+        const startCol = columnLetter(first.length);
+        const endCol = columnLetter(headers.length - 1);
+        await this.client.batchUpdate(this.spreadsheetId, [
+          { range: `${tab}!${startCol}1:${endCol}1`, values: [missing] },
+        ]);
+        upgraded.push(tab);
       }
     }
-    return { created, headersWritten };
+    return { created, headersWritten, upgraded };
   }
 
   async appendRaw(records: RawTrendRecord[]): Promise<AppendResult> {
@@ -232,10 +243,12 @@ export class SheetsRepo {
   /**
    * Flip is_latest → FALSE on every other run's rows for the date.
    * The only cell-update the app performs (re-sort flow, TRD §9).
+   * Sorted rows flip only within the same scope (CATRUN-09); digest rows
+   * carry no scope (only scope "all" writes them).
    */
-  async markLatest(runDate: string, keepRunId: string): Promise<{ flipped: number }> {
+  async markLatest(runDate: string, keepRunId: string, scope = "all"): Promise<{ flipped: number }> {
     let flipped = 0;
-    flipped += await this.flipStaleLatest(SORTED_TRENDS_TAB, "run_date", 2, "run_id", 1, "is_latest", 23, runDate, keepRunId);
+    flipped += await this.flipStaleLatest(SORTED_TRENDS_TAB, "run_date", 2, "run_id", 1, "is_latest", 23, runDate, keepRunId, scope);
     flipped += await this.flipStaleLatest(DAILY_DIGEST_TAB, "run_date", 0, "run_id", 1, "is_latest", 10, runDate, keepRunId);
     this.cache.invalidate();
     return { flipped };
@@ -323,6 +336,7 @@ export class SheetsRepo {
     flagCol: number,
     runDate: string,
     keepRunId: string,
+    scope?: string,
   ): Promise<number> {
     const values = await this.client.getAllValues(this.spreadsheetId, tab);
     const header = values[0];
@@ -333,6 +347,8 @@ export class SheetsRepo {
         `sheets tab '${tab}' has unexpected headers; refusing to flip is_latest (expected ${dateHeader}/${idHeader}/${flagHeader})`,
       );
     }
+    // Scope column is trailing and optional: old rows without it read as "all".
+    const scopeCol = scope === undefined ? -1 : header.indexOf("scope");
     const flagLetter = columnLetter(flagCol);
     const updates: { range: string; values: string[][] }[] = [];
     values.forEach((row, idx) => {
@@ -340,6 +356,7 @@ export class SheetsRepo {
       if (row[dateCol] !== runDate) return;
       if (row[idCol] === keepRunId) return;
       if (!isTruthyFlag(row[flagCol])) return;
+      if (scope !== undefined && (scopeCol < 0 ? "all" : (row[scopeCol] ?? "all")) !== scope) return;
       updates.push({ range: `${tab}!${flagLetter}${String(idx + 1)}`, values: [["FALSE"]] });
     });
     if (updates.length === 0) return 0;

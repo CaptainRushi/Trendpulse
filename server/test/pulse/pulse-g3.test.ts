@@ -51,9 +51,13 @@ describe("PULSE-15 today/top shape and fallback", () => {
         { id: "t2", rank: 2, evidence: [] },
       ]);
       await seedSortedRow(t, "t1");
+      // Relative to now (not fixed clock times): robust at any hour, as long
+      // as the suite doesn't straddle midnight UTC.
+      const lastAt = new Date(Date.now() - 5 * 60_000).toISOString();
+      const baseAt = new Date(Date.now() - 15 * 60_000).toISOString();
       seedSamples(t, "t1", [
-        { t: `${today}T06:00:00.000Z`, i: 100, total: 40 },
-        { t: new Date().toISOString(), i: 105, total: 42 },
+        { t: baseAt, i: 100, total: 40 },
+        { t: lastAt, i: 105, total: 42 },
       ]);
       const res = await app.inject({ method: "GET", url: "/api/today/top" });
       expect(res.statusCode).toBe(200);

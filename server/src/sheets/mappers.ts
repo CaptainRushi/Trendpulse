@@ -109,7 +109,10 @@ function json<T>(cell: Cell, field: string, schema: z.ZodType<T>, emptyDefault: 
   return result.data;
 }
 
-function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
+// Input is `unknown` (not T): under exactOptionalPropertyTypes, inferring T
+// from a schema with .default() fields pollutes T with the optional input
+// shape. Callers get the required output type; bad rows fail at parse.
+function parseWith<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) {
     const issue = result.error.issues[0];
@@ -152,6 +155,8 @@ export function rawRecordToRow(r: Raw): string[] {
     JSON.stringify(r.merged_sources),
     opt(r.extraction_model),
     opt(r.source_label),
+    // Tolerant of pre-category 19-col rows: missing cell reads as null.
+    opt(r.target_category),
   ]);
 }
 
@@ -179,11 +184,12 @@ export function rowToRawRecord(cells: Cell[]): Raw {
       extraction_model: nullableText(cellAt(cells, 17), "extraction_model"),
       // Tolerant of pre-label 18-col rows: missing cell reads as null.
       source_label: nullableText(cellAt(cells, 18), "source_label"),
+      target_category: nullableText(cellAt(cells, 19), "target_category"),
     },
   );
 }
 
-// ── sorted_trends (25 cols) ──────────────────────────────────────────────────
+// ── sorted_trends (26 cols) ──────────────────────────────────────────────────
 
 export function sortedRecordToRow(r: Sorted): string[] {
   return capCells([
@@ -212,6 +218,8 @@ export function sortedRecordToRow(r: Sorted): string[] {
     req(r.sorted_at),
     r.is_latest ? "TRUE" : "FALSE",
     r.hidden ? "TRUE" : "FALSE",
+    // Tolerant of pre-scope 25-col rows: missing cell reads as "all".
+    req(r.scope),
   ]);
 }
 
@@ -244,6 +252,7 @@ export function rowToSortedRecord(cells: Cell[]): Sorted {
       sorted_at: text(cellAt(cells, 22), "sorted_at"),
       is_latest: bool(cellAt(cells, 23), "is_latest"),
       hidden: bool(cellAt(cells, 24), "hidden"),
+      scope: text(cellAt(cells, 25), "scope") || "all",
     },
   );
 }
@@ -290,7 +299,7 @@ export function rowToDigestRecord(cells: Cell[]): Digest {
   );
 }
 
-// ── runs_log (15 cols) ───────────────────────────────────────────────────────
+// ── runs_log (16 cols) ───────────────────────────────────────────────────────
 
 export function runLogRecordToRow(r: RunLog): string[] {
   return capCells([
@@ -309,6 +318,8 @@ export function runLogRecordToRow(r: RunLog): string[] {
     String(r.tokens_out),
     JSON.stringify(r.errors),
     req(r.app_version),
+    // Tolerant of pre-category 15-col rows: missing cell reads as [].
+    JSON.stringify(r.categories),
   ]);
 }
 
@@ -331,6 +342,7 @@ export function rowToRunLogRecord(cells: Cell[]): RunLog {
       tokens_out: int(cellAt(cells, 12), "tokens_out"),
       errors: json(cellAt(cells, 13), "errors_json", z.unknown(), []),
       app_version: text(cellAt(cells, 14), "app_version"),
+      categories: json(cellAt(cells, 15), "categories", z.array(z.string()), []),
     },
   );
 }

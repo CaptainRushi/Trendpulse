@@ -181,6 +181,7 @@ export function scoreTopics(options: ScoreOptions): ScoreResult {
       sorted_at: now,
       is_latest: true,
       hidden: false,
+      scope: "all", // S3 threads the run scope through here.
     }),
   );
   return { topics, droppedNoEvidence, momentumCoerced };

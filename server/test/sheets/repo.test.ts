@@ -32,6 +32,7 @@ function rawRecord(id: string, runId = "run-1"): RawTrendRecord {
     merged_sources: [],
     extraction_model: null,
     source_label: null,
+    target_category: null,
   };
 }
 
@@ -62,6 +63,7 @@ function sortedRecord(topicId: string, runId: string, latest: boolean): SortedTr
     sorted_at: "2026-09-30T07:00:00Z",
     is_latest: latest,
     hidden: false,
+    scope: "all",
   };
 }
 
@@ -223,6 +225,7 @@ describe("SheetsRepo", () => {
       tokens_out: 500,
       errors: [],
       app_version: "0.1.0",
+      categories: [],
     });
 
     const { rows, warnings } = await repo.readRunLog();

@@ -83,6 +83,7 @@ export function makeSortedTopic(overrides: Partial<Sorted> = {}): Sorted {
     sorted_at: "2026-09-30T07:00:00.000Z",
     is_latest: true,
     hidden: false,
+    scope: "all",
     ...overrides,
   });
 }

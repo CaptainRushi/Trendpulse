@@ -26,7 +26,7 @@ describe("tab definitions (single source of truth for columns)", () => {
     expect(RUNS_LOG_TAB).toBe("runs_log");
   });
 
-  it("raw_trends has the 19 spec columns in order (S = source_label)", () => {
+  it("raw_trends has the 20 spec columns in order (T = target_category)", () => {
     expect([...RAW_TRENDS_HEADERS]).toEqual([
       "id",
       "run_id",
@@ -47,11 +47,12 @@ describe("tab definitions (single source of truth for columns)", () => {
       "merged_sources",
       "extraction_model",
       "source_label",
+      "target_category",
     ]);
   });
 
-  it("sorted_trends has the 25 spec columns in order", () => {
-    expect(SORTED_TRENDS_HEADERS).toHaveLength(25);
+  it("sorted_trends has the 26 spec columns in order", () => {
+    expect(SORTED_TRENDS_HEADERS).toHaveLength(26);
     expect(SORTED_TRENDS_HEADERS[0]).toBe("topic_id");
     expect(SORTED_TRENDS_HEADERS[8]).toBe("trend_score");
     expect(SORTED_TRENDS_HEADERS[23]).toBe("is_latest");
@@ -92,6 +93,7 @@ describe("tab definitions (single source of truth for columns)", () => {
       "tokens_out",
       "errors_json",
       "app_version",
+      "categories",
     ]);
   });
 
@@ -129,6 +131,7 @@ describe("record schemas", () => {
       merged_sources: [],
       extraction_model: null,
       source_label: null,
+      target_category: null,
     });
     expect(record.source).toBe("hackernews");
   });
@@ -197,7 +200,9 @@ describe("record schemas", () => {
       tokens_out: 50,
       errors: [],
       app_version: "0.1.0",
+      categories: [],
     });
     expect(run.trigger).toBe("cron");
   });
 });
+

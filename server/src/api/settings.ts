@@ -12,8 +12,9 @@ import type { TrendPulseConfig } from "../config/env.js";
 import { DEFAULT_SCORE_WEIGHTS } from "../sorting/score.js";
 import { badRequest } from "./errors.js";
 import type { AppContext } from "./context.js";
+import { normalizeScope, validateCategorySources } from "../categories/registry.js";
 
-type SettingType = "boolean" | "integer" | "string" | "string[]" | "weights";
+type SettingType = "boolean" | "integer" | "string" | "string[]" | "weights" | "object";
 
 interface SettingSpec {
   type: SettingType;
@@ -48,6 +49,8 @@ const SPECS: Record<string, SettingSpec> = {
   llm_concurrency: { type: "integer", min: 1, fromConfig: (c) => c.llmConcurrency },
   llm_timeout_ms: { type: "integer", min: 1000, fromConfig: (c) => c.llmTimeoutMs },
   sheet_cache_ttl_s: { type: "integer", min: 0, fromConfig: (c) => c.sheetCacheTtlS },
+  default_categories: { type: "string[]", fromConfig: () => [], envBacked: false },
+  category_sources: { type: "object", fromConfig: () => ({}), envBacked: false },
   enable_playwright: { type: "boolean", fromConfig: (c) => c.enablePlaywright },
   theme: { type: "string", fromConfig: () => "system", envBacked: false },
 };
@@ -96,7 +99,24 @@ function coerceValue(key: string, spec: SettingSpec, raw: unknown): unknown {
       if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
         fail("expected an array of strings");
       }
+      if (key === "default_categories") {
+        try {
+          normalizeScope(raw as string[]);
+        } catch (error) {
+          fail(error instanceof Error ? error.message : "invalid categories");
+        }
+      }
       return raw;
+    case "object": {
+      if (key === "category_sources") {
+        try {
+          return validateCategorySources(raw);
+        } catch (error) {
+          fail(error instanceof Error ? error.message : "invalid sources");
+        }
+      }
+      throw badRequest(`Invalid value for '${key}': expected an object.`);
+    }
     case "weights": {
       if (typeof raw !== "object" || raw === null) fail("expected an object");
       const record = raw as Record<string, unknown>;

@@ -134,6 +134,7 @@ function makeItem(overrides: Partial<RawTrendRecord> & { title: string }): RawTr
     merged_sources: [],
     extraction_model: null,
     source_label: null,
+    target_category: null,
     ...overrides,
   };
 }

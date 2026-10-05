@@ -38,6 +38,7 @@ export const RAW_TRENDS_HEADERS: readonly string[] = [
   "merged_sources",
   "extraction_model",
   "source_label",
+  "target_category",
 ];
 
 export const SORTED_TRENDS_HEADERS: readonly string[] = [
@@ -66,6 +67,7 @@ export const SORTED_TRENDS_HEADERS: readonly string[] = [
   "sorted_at",
   "is_latest",
   "hidden",
+  "scope",
 ];
 
 export const DAILY_DIGEST_HEADERS: readonly string[] = [
@@ -98,6 +100,7 @@ export const RUNS_LOG_HEADERS: readonly string[] = [
   "tokens_out",
   "errors_json",
   "app_version",
+  "categories",
 ];
 
 export const TAB_HEADERS: Record<string, readonly string[]> = {
@@ -179,6 +182,8 @@ export const RawTrendRecord = z.object({
   extraction_model: z.string().nullable(),
   /** Human label for the source (feed name, subreddit). Null until collectors set it. */
   source_label: z.string().nullable(),
+  /** Category this item was collected for (category runs). Null = general. */
+  target_category: z.string().nullable().default(null),
 });
 export type RawTrendRecord = z.infer<typeof RawTrendRecord>;
 
@@ -208,6 +213,8 @@ export const SortedTrendRecord = z.object({
   sorted_at: z.string(),
   is_latest: z.boolean(),
   hidden: z.boolean(),
+  /** Scope set this topic belongs to; old rows without a value read as "all". */
+  scope: z.string().default("all"),
 });
 export type SortedTrendRecord = z.infer<typeof SortedTrendRecord>;
 
@@ -242,5 +249,7 @@ export const RunLogRecord = z.object({
   tokens_out: z.number().int(),
   errors: z.unknown(),
   app_version: z.string(),
+  /** Categories this run targeted; empty = all. */
+  categories: z.array(z.string()).default([]),
 });
 export type RunLogRecord = z.infer<typeof RunLogRecord>;

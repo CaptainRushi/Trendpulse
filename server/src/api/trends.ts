@@ -9,6 +9,7 @@ import { z } from "zod";
 import { badRequest, notFound } from "./errors.js";
 import type { AppContext } from "./context.js";
 import { appRepo } from "./context.js";
+import { normalizeScope } from "../categories/registry.js";
 import {
   Category,
   Momentum,
@@ -37,6 +38,7 @@ const TrendsQuery = z.object({
   sort: z.enum(["score", "rank", "title"]).default("score"),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+  scope: z.string().optional(),
 });
 export type TrendsFilter = z.infer<typeof TrendsQuery> & { date: string };
 
@@ -52,24 +54,35 @@ export function parseTrendsQuery(ctx: AppContext, query: unknown): TrendsFilter 
   return { ...result.data, date: result.data.date ?? today };
 }
 
-export interface TrendsResult {
-  date: string;
-  items: z.infer<typeof SortedTrendRecord>[];
-  total: number;
-  warnings: number;
-  ageS: number;
-}
-
 export const TrendsResponse = z.object({
   date: z.string(),
+  scope: z.string().default("all"),
+  hint: z.string().optional(),
   items: z.array(SortedTrendRecord),
   total: z.number().int(),
   warnings: z.number().int(),
   cache: z.object({ age_s: z.number() }),
 });
 
+export interface TrendsResult {
+  date: string;
+  scope: string;
+  hint?: string;
+  items: z.infer<typeof SortedTrendRecord>[];
+  total: number;
+  warnings: number;
+  ageS: number;
+}
+
 export async function loadTrends(ctx: AppContext, filter: TrendsFilter): Promise<TrendsResult> {
   const repo = appRepo(ctx);
+  // Unknown scopes answer empty with a hint, never an error (CATRUN-11).
+  let scope = "all";
+  try {
+    scope = normalizeScope(filter.scope === undefined || filter.scope === "" ? [] : filter.scope.split("+"));
+  } catch {
+    return { date: filter.date, scope: filter.scope ?? "all", hint: `unknown scope '${filter.scope ?? ""}' — no set`, items: [], total: 0, warnings: 0, ageS: 0 };
+  }
   const sorted = await repo.readSorted({ runDate: filter.date, onlyLatest: true });
   let warnings = sorted.warnings;
   let ageS = sorted.ageS;
@@ -83,6 +96,7 @@ export async function loadTrends(ctx: AppContext, filter: TrendsFilter): Promise
   const q = filter.q?.toLowerCase();
   const items = sorted.rows.filter(
     (topic) =>
+      ((topic.scope || "all") === scope) &&
       (filter.category.length === 0 || filter.category.includes(topic.category)) &&
       (filter.momentum.length === 0 || filter.momentum.includes(topic.momentum)) &&
       (filter.min_score === undefined || topic.trend_score >= filter.min_score) &&
@@ -96,7 +110,7 @@ export async function loadTrends(ctx: AppContext, filter: TrendsFilter): Promise
   if (filter.sort === "title") items.sort((a, b) => (a.title < b.title ? -1 : a.title > b.title ? 1 : 0));
   else items.sort((a, b) => a.rank - b.rank); // rank == score order; "score" identical
   const total = items.length;
-  return { date: filter.date, items: items.slice(filter.offset, filter.offset + filter.limit), total, warnings, ageS };
+  return { date: filter.date, scope, items: items.slice(filter.offset, filter.offset + filter.limit), total, warnings, ageS };
 }
 
 const TopicParams = z.object({ topic_id: z.string().min(1) });
@@ -134,6 +148,8 @@ export function registerTrends(app: FastifyInstance, ctx: AppContext): void {
     const result = await loadTrends(ctx, filter);
     return TrendsResponse.parse({
       date: result.date,
+      scope: result.scope,
+      ...(result.hint ? { hint: result.hint } : {}),
       items: result.items,
       total: result.total,
       warnings: result.warnings,
@@ -218,9 +234,11 @@ export function registerTrends(app: FastifyInstance, ctx: AppContext): void {
     });
   });
 
-  app.get("/api/dates", async () => {
+  app.get("/api/dates", async (request) => {
+    const query = z.object({ scope: z.string().optional() }).safeParse(request.query);
+    const scope = query.success && query.data.scope ? query.data.scope : "all";
     const result = await appRepo(ctx).readSorted({ onlyLatest: false });
-    const dates = [...new Set(result.rows.map((row) => row.run_date))].sort().reverse();
+    const dates = [...new Set(result.rows.filter((row) => (row.scope || "all") === scope).map((row) => row.run_date))].sort().reverse();
     return z.object({ dates: z.array(z.string()) }).parse({ dates });
   });
 }

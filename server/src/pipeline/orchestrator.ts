@@ -792,6 +792,7 @@ export class Orchestrator {
           tokens_out: usage.tokensOut,
           errors: exec.partialReasons,
           app_version: APP_VERSION,
+          categories: [], // S3 threads the run categories through here.
         }),
       );
     }

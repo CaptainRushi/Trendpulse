@@ -37,6 +37,7 @@ const rawSample: Raw = {
   merged_sources: ["reddit"],
   extraction_model: null,
   source_label: null,
+  target_category: null,
 };
 
 const sortedSample: Sorted = {
@@ -65,18 +66,19 @@ const sortedSample: Sorted = {
   sorted_at: "2026-09-30T07:00:00Z",
   is_latest: true,
   hidden: false,
+  scope: "all",
 };
 
 describe("mappers", () => {
   it("round-trips a raw record through a sheet row", () => {
     const row = rawRecordToRow(rawSample);
-    expect(row).toHaveLength(19);
+    expect(row).toHaveLength(20);
     expect(rowToRawRecord(row)).toEqual(rawSample);
   });
 
   it("round-trips a sorted record through a sheet row", () => {
     const row = sortedRecordToRow(sortedSample);
-    expect(row).toHaveLength(25);
+    expect(row).toHaveLength(26);
     expect(rowToSortedRecord(row)).toEqual(sortedSample);
   });
 
@@ -114,6 +116,7 @@ describe("mappers", () => {
       tokens_out: 4000,
       errors: [],
       app_version: "0.1.0",
+      categories: [],
     };
     expect(rowToRunLogRecord(runLogRecordToRow(run))).toEqual(run);
   });
@@ -163,3 +166,4 @@ describe("mappers", () => {
     expect(parsed.merged_sources).toEqual([]);
   });
 });
+

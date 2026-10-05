@@ -46,6 +46,7 @@ function raw(id: string, overrides: Partial<RawTrendRecord> = {}): RawTrendRecor
     merged_sources: [],
     extraction_model: null,
     source_label: null,
+    target_category: null,
     ...overrides,
   };
 }
@@ -77,6 +78,7 @@ function sorted(topicId: string, runId: string, latest: boolean): SortedTrendRec
     sorted_at: "2026-09-30T07:00:00Z",
     is_latest: latest,
     hidden: false,
+    scope: "all",
   };
 }
 
@@ -96,9 +98,9 @@ describe("STEP 2 sheets layer", () => {
     for (const tab of REQUIRED_TABS) {
       expect(client.tabs.get(tab)?.[0]).toEqual([...TAB_HEADERS[tab]!]);
     }
-    expect([...RAW_TRENDS_HEADERS].at(-1)).toBe("source_label");
-    expect(RAW_TRENDS_HEADERS).toHaveLength(19);
-    expect(SORTED_TRENDS_HEADERS).toHaveLength(25);
+    expect([...RAW_TRENDS_HEADERS].at(-1)).toBe("target_category");
+    expect(RAW_TRENDS_HEADERS).toHaveLength(20);
+    expect(SORTED_TRENDS_HEADERS).toHaveLength(26);
   });
 
   it("SHT-02 init twice is a no-op", async () => {
@@ -239,7 +241,7 @@ describe("STEP 2 sheets layer", () => {
   it("W-01 RawItem round-trips through a raw_trends row", () => {
     const record = raw("w1", { source_label: "r/technology", merged_sources: ["reddit"] });
     const row = rawRecordToRow(record);
-    expect(row).toHaveLength(19);
+    expect(row).toHaveLength(20);
     expect(row[18]).toBe("r/technology");
     expect(rowToRawRecord(row)).toEqual(record);
     // Legacy 18-col rows (pre-label) still parse with a null label.
@@ -249,10 +251,11 @@ describe("STEP 2 sheets layer", () => {
   it("W-02 SortedTopic round-trips through a sorted_trends row", () => {
     const record = { ...sorted("w1", "run-w", true), hidden: true };
     const row = sortedRecordToRow(record);
-    expect(row).toHaveLength(25);
+    expect(row).toHaveLength(26);
     const back = rowToSortedRecord(row);
     expect(back).toEqual(record);
     expect(back.is_latest).toBe(true);
     expect(back.hidden).toBe(true);
   });
 });
+
