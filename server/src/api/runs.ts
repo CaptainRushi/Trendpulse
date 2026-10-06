@@ -12,6 +12,9 @@ import type { AppContext } from "./context.js";
 import { appEvents, appLogger, appOrchestrator } from "./context.js";
 import { streamRunEvents } from "./sse.js";
 import { SourceKey } from "../sheets/schema.js";
+import { estimateRun } from "../categories/estimate.js";
+import { normalizeScope } from "../categories/registry.js";
+import { categoryOverrides } from "./categories.js";
 
 const RunRow = z.object({
   run_id: z.string(),
@@ -86,7 +89,35 @@ function toRunRow(row: RunRowShape): z.infer<typeof RunRow> {
   });
 }
 
+const EstimateBody = z.object({
+  categories: z.array(z.string()).max(5).optional(),
+  mode: z.enum(["strict", "loose"]).optional(),
+});
+
 export function registerRuns(app: FastifyInstance, ctx: AppContext): void {
+  app.post("/api/runs/estimate", (request) => {
+    const parsed = EstimateBody.safeParse(request.body ?? {});
+    if (!parsed.success) throw badRequest("Body must be { categories?: string[≤5], mode?: strict|loose }.");
+    const categories = parsed.data.categories ?? [];
+    try {
+      normalizeScope(categories);
+    } catch (error) {
+      throw badRequest(error instanceof Error ? error.message : "invalid categories");
+    }
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.config.tz });
+    return estimateRun(
+      ctx.db,
+      {
+        categories,
+        mode: parsed.data.mode ?? "strict",
+        overrides: categoryOverrides(ctx.db),
+        redditCreds: ctx.config.redditClientId !== "" && ctx.config.redditClientSecret !== "",
+      },
+      today,
+      ctx.config.jevPricePerMInput,
+    );
+  });
+
   app.get("/api/runs", (request) => {
     const parsed = RunsQuery.safeParse(request.query);
     if (!parsed.success) throw badRequest("Invalid query: limit/offset must be integers.");

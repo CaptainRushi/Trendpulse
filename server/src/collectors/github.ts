@@ -68,7 +68,9 @@ export const githubCollector: Collector = {
     });
 
     try {
-      const query = buildSearchQuery();
+      // Category runs pass a topic: query through config_json.query.
+      const override = ctx.config.query;
+      const query = typeof override === "string" && override.trim() !== "" ? override.trim() : buildSearchQuery();
       const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&per_page=${String(Math.min(ctx.limit, 100))}`;
       const headers: Record<string, string> = { accept: "application/vnd.github+json" };
       const token =

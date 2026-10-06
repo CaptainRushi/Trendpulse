@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Lobsters</title>
+    <link>https://lobste.rs/</link>
+    <atom:link href="https://lobste.rs/rss/?paged=5" rel="self"/>
+    <description></description>
+    <pubDate>Sun, 04 Oct 2026 14:30:36 -0500</pubDate>
+    <ttl>120</ttl>
+    <item>
+      <title>ncdu: NCurses Disk Usage (an updated fork)</title>
+      <link>https://github.com/rcalixte/ncdu</link>
+      <guid>https://lobste.rs/s/dsoh2w</guid>
+      <author>github.com by rcalixte</author>
+      <pubDate>Sun, 04 Oct 2026 14:30:36 -0500</pubDate>
+      <comments>https://lobste.rs/s/dsoh2w/ncdu_ncurses_disk_usage_updated_fork</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/dsoh2w/ncdu_ncurses_disk_usage_updated_fork"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>release</category>
+      <category>zig</category>
+    </item>
+    <item>
+      <title>Rust's derive often implies inline</title>
+      <link>https://yossarian.net/til/post/rust-s-derive-often-implies-inline/</link>
+      <guid>https://lobste.rs/s/dldhpw</guid>
+      <author>yossarian.net by yossarian</author>
+      <pubDate>Sat, 03 Oct 2026 20:41:57 -0500</pubDate>
+      <comments>https://lobste.rs/s/dldhpw/rust_s_derive_often_implies_inline</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/dldhpw/rust_s_derive_often_implies_inline"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>rust</category>
+    </item>
+    <item>
+      <title>Refinement E-Graphs</title>
+      <link>https://www.philipzucker.com/refinement_egraph/</link>
+      <guid>https://lobste.rs/s/9bufek</guid>
+      <author>philipzucker.com by philzook</author>
+      <pubDate>Sun, 04 Oct 2026 21:23:30 -0500</pubDate>
+      <comments>https://lobste.rs/s/9bufek/refinement_e_graphs</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/9bufek/refinement_e_graphs"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>compilers</category>
+      <category>formalmethods</category>
+    </item>
+    <item>
+      <title>Why don’t more developers "use the platform"?</title>
+      <link>https://nolanlawson.com/2026/10/03/why-dont-more-developers-use-the-platform/</link>
+      <guid>https://lobste.rs/s/srduzv</guid>
+      <author>nolanlawson.com by nolan</author>
+      <pubDate>Sat, 03 Oct 2026 16:35:28 -0500</pubDate>
+      <comments>https://lobste.rs/s/srduzv/why_don_t_more_developers_use_platform</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/srduzv/why_don_t_more_developers_use_platform"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>web</category>
+    </item>
+    <item>
+      <title>We’re going to need default hard budget caps on pretty much everything</title>
+      <link>https://simonwillison.net/2026/Oct/3/default-hard-budget-caps/</link>
+      <guid>https://lobste.rs/s/xkwswd</guid>
+      <author>simonwillison.net via frontsideair</author>
+      <pubDate>Sun, 04 Oct 2026 02:58:14 -0500</pubDate>
+      <comments>https://lobste.rs/s/xkwswd/we_re_going_need_default_hard_budget_caps</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/xkwswd/we_re_going_need_default_hard_budget_caps"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>practices</category>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>Iroh global content discovery</title>
+      <link>https://www.iroh.computer/blog/iroh-global-content-discovery</link>
+      <guid>https://lobste.rs/s/eoibah</guid>
+      <author>iroh.computer via sanqui</author>
+      <pubDate>Sun, 04 Oct 2026 14:19:42 -0500</pubDate>
+      <comments>https://lobste.rs/s/eoibah/iroh_global_content_discovery</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/eoibah/iroh_global_content_discovery"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>distributed</category>
+    </item>
+    <item>
+      <title>grubby: static site generator for git repos written in Ruby</title>
+      <link>https://git.btxx.org/grubby</link>
+      <guid>https://lobste.rs/s/xpyahx</guid>
+      <author>git.btxx.org by bt</author>
+      <pubDate>Sun, 04 Oct 2026 05:28:57 -0500</pubDate>
+      <comments>https://lobste.rs/s/xpyahx/grubby_static_site_generator_for_git</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/xpyahx/grubby_static_site_generator_for_git"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>ruby</category>
+      <category>vcs</category>
+    </item>
+    <item>
+      <title>The complement of true is true, except when it's false</title>
+      <link>https://dryperspective.github.io/posts/complement-of-true/</link>
+      <guid>https://lobste.rs/s/4bzoft</guid>
+      <author>dryperspective.github.io via aw1621107</author>
+      <pubDate>Sun, 04 Oct 2026 07:30:26 -0500</pubDate>
+      <comments>https://lobste.rs/s/4bzoft/complement_true_is_true_except_when_it_s</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/4bzoft/complement_true_is_true_except_when_it_s"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>c++</category>
+    </item>
+    <item>
+      <title>Self-hosted HTTP tunnels with SSH and nginx</title>
+      <link>https://vincent.bernat.ch/en/blog/2026-http-over-ssh</link>
+      <guid>https://lobste.rs/s/jba52r</guid>
+      <author>vincent.bernat.ch via gioele</author>
+      <pubDate>Sun, 04 Oct 2026 14:08:58 -0500</pubDate>
+      <comments>https://lobste.rs/s/jba52r/self_hosted_http_tunnels_with_ssh_nginx</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/jba52r/self_hosted_http_tunnels_with_ssh_nginx"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>networking</category>
+    </item>
+    <item>
+      <title>Kolibri: A Sovereign Open-Weight Model</title>
+      <link>https://aleph-alpha.com/en/blog/kolibri-has-landed-a-sovereign-open-weight-model/</link>
+      <guid>https://lobste.rs/s/qcgjpu</guid>
+      <author>aleph-alpha.com via miro</author>
+      <pubDate>Sun, 04 Oct 2026 02:57:55 -0500</pubDate>
+      <comments>https://lobste.rs/s/qcgjpu/kolibri_sovereign_open_weight_model</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/qcgjpu/kolibri_sovereign_open_weight_model"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>Hacking the Go compiler to efficiently map IPv4 to IPv6</title>
+      <link>https://vincent.bernat.ch/en/blog/2026-go-netip-addrto6</link>
+      <guid>https://lobste.rs/s/ul9krj</guid>
+      <author>vincent.bernat.ch via fanf</author>
+      <pubDate>Sun, 04 Oct 2026 13:49:55 -0500</pubDate>
+      <comments>https://lobste.rs/s/ul9krj/hacking_go_compiler_efficiently_map_ipv4</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/ul9krj/hacking_go_compiler_efficiently_map_ipv4"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>go</category>
+      <category>compilers</category>
+    </item>
+    <item>
+      <title>Flatpak from the CLI sucks</title>
+      <link>https://kowalski7cc.xyz/blog/flatpak-from-the-cli-sucks/</link>
+      <guid>https://lobste.rs/s/lnmgaw</guid>
+      <author>kowalski7cc.xyz via ema-pe</author>
+      <pubDate>Sun, 04 Oct 2026 10:21:34 -0500</pubDate>
+      <comments>https://lobste.rs/s/lnmgaw/flatpak_from_cli_sucks</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/lnmgaw/flatpak_from_cli_sucks"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>linux</category>
+      <category>rant</category>
+    </item>
+    <item>
+      <title>Protocol-aware recovery for consensus-based storage (2018)</title>
+      <link>https://www.usenix.org/system/files/conference/fast18/fast18-alagappan.pdf</link>
+      <guid>https://lobste.rs/s/4bzboj</guid>
+      <author>usenix.org via typesanitizer</author>
+      <pubDate>Sun, 04 Oct 2026 15:00:34 -0500</pubDate>
+      <comments>https://lobste.rs/s/4bzboj/protocol_aware_recovery_for_consensus</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/4bzboj/protocol_aware_recovery_for_consensus"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>pdf</category>
+      <category>databases</category>
+      <category>distributed</category>
+    </item>
+    <item>
+      <title>Our RISC-V emulator PasRISCV</title>
+      <link>https://againstallodds.games/blog/2026/10/03/our-risc-v-emulator-pasriscv/</link>
+      <guid>https://lobste.rs/s/rsx2a6</guid>
+      <author>againstallodds.games via edwintorok</author>
+      <pubDate>Sun, 04 Oct 2026 03:40:38 -0500</pubDate>
+      <comments>https://lobste.rs/s/rsx2a6/our_risc_v_emulator_pasriscv</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/rsx2a6/our_risc_v_emulator_pasriscv"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>virtualization</category>
+      <category>games</category>
+    </item>
+    <item>
+      <title>Implementing Undo - Computerphile</title>
+      <link>https://www.youtube.com/watch?v=S6PqsZ65Mg4</link>
+      <guid>https://lobste.rs/s/eulzvm</guid>
+      <author>youtube.com via lr0</author>
+      <pubDate>Sun, 04 Oct 2026 23:36:02 -0500</pubDate>
+      <comments>https://lobste.rs/s/eulzvm/implementing_undo_computerphile</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/eulzvm/implementing_undo_computerphile"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>video</category>
+      <category>programming</category>
+    </item>
+    <item>
+      <title>Thoreau BASIC</title>
+      <link>https://thoreaubasic.com/</link>
+      <guid>https://lobste.rs/s/x5ug70</guid>
+      <author>thoreaubasic.com via isagalaev</author>
+      <pubDate>Sun, 04 Oct 2026 11:37:33 -0500</pubDate>
+      <comments>https://lobste.rs/s/x5ug70/thoreau_basic</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/x5ug70/thoreau_basic"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>retrocomputing</category>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>System-level ad-blocking in Android</title>
+      <link>https://kevinboone.me/adblock.html</link>
+      <guid>https://lobste.rs/s/hk0ohb</guid>
+      <author>kevinboone.me via robalex</author>
+      <pubDate>Sat, 03 Oct 2026 15:43:41 -0500</pubDate>
+      <comments>https://lobste.rs/s/hk0ohb/system_level_ad_blocking_android</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/hk0ohb/system_level_ad_blocking_android"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>android</category>
+    </item>
+    <item>
+      <title>Broadcasting conglomerates are attempting a takeover of over-the-air television. We must defend it</title>
+      <link>https://place.reeseric.ci/writings/2026-10-04/</link>
+      <guid>https://lobste.rs/s/r81dwi</guid>
+      <author>place.reeseric.ci by reesericci</author>
+      <pubDate>Sun, 04 Oct 2026 23:10:42 -0500</pubDate>
+      <comments>https://lobste.rs/s/r81dwi/broadcasting_conglomerates_are</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/r81dwi/broadcasting_conglomerates_are"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>culture</category>
+    </item>
+    <item>
+      <title>Building a RAG Pipeline for Semantic Code Search</title>
+      <link>https://blog.jetbrains.com/ai/2026/09/building-a-rag-pipeline-for-semantic-code-search-a-developer-diary-and-field-notes/</link>
+      <guid>https://lobste.rs/s/ok0m3n</guid>
+      <author>blog.jetbrains.com via kaycebasques</author>
+      <pubDate>Sun, 04 Oct 2026 22:52:48 -0500</pubDate>
+      <comments>https://lobste.rs/s/ok0m3n/building_rag_pipeline_for_semantic_code</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/ok0m3n/building_rag_pipeline_for_semantic_code"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>plt</category>
+      <category>editors</category>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>I got targeted: Trying to get your credentials via a git post-checkout hook</title>
+      <link>https://frankwiles.com/posts/i-got-targeted/</link>
+      <guid>https://lobste.rs/s/cd5gdk</guid>
+      <author>frankwiles.com by frankwiles</author>
+      <pubDate>Fri, 02 Oct 2026 17:19:02 -0500</pubDate>
+      <comments>https://lobste.rs/s/cd5gdk/i_got_targeted_trying_get_your</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/cd5gdk/i_got_targeted_trying_get_your"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>security</category>
+      <category>vcs</category>
+    </item>
+    <item>
+      <title>The Era of Software Quality, or the Era of Ostriches?</title>
+      <link>https://blogs.gnome.org/mcatanzaro/2026/10/02/the-era-of-software-quality-or-the-era-of-ostriches/</link>
+      <guid>https://lobste.rs/s/elziso</guid>
+      <author>blogs.gnome.org via calvin</author>
+      <pubDate>Sat, 03 Oct 2026 08:31:58 -0500</pubDate>
+      <comments>https://lobste.rs/s/elziso/era_software_quality_era_ostriches</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/elziso/era_software_quality_era_ostriches"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>practices</category>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>An Update on Orion for Linux and Windows</title>
+      <link>https://blog.kagi.com/update-orion-linux-windows</link>
+      <guid>https://lobste.rs/s/xruas8</guid>
+      <author>blog.kagi.com via BryceWray</author>
+      <pubDate>Sat, 03 Oct 2026 10:57:16 -0500</pubDate>
+      <comments>https://lobste.rs/s/xruas8/update_on_orion_for_linux_windows</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/xruas8/update_on_orion_for_linux_windows"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>browsers</category>
+      <category>linux</category>
+      <category>windows</category>
+    </item>
+    <item>
+      <title>Improving and Stabilizing the racoon2 IKE Daemon in NetBSD</title>
+      <link>https://blog.netbsd.org/tnf/entry/gsoc2026_racoon2</link>
+      <guid>https://lobste.rs/s/wbpt5y</guid>
+      <author>blog.netbsd.org via jaypatelani</author>
+      <pubDate>Sun, 04 Oct 2026 07:46:13 -0500</pubDate>
+      <comments>https://lobste.rs/s/wbpt5y/improving_stabilizing_racoon2_ike</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/wbpt5y/improving_stabilizing_racoon2_ike"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>netbsd</category>
+    </item>
+    <item>
+      <title>Rust, In Sickness &amp; In Health</title>
+      <link>https://www.youtube.com/watch?v=3kbPyuAtk7g</link>
+      <guid>https://lobste.rs/s/hfq43j</guid>
+      <author>youtube.com via dbremner</author>
+      <pubDate>Sat, 03 Oct 2026 15:37:40 -0500</pubDate>
+      <comments>https://lobste.rs/s/hfq43j/rust_sickness_health</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/hfq43j/rust_sickness_health"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>video</category>
+      <category>rust</category>
+    </item>
+    <item>
+      <title>How to Hack Time, With C2PA</title>
+      <link>https://www.da.vidbuchanan.co.uk/blog/hacking-time.html</link>
+      <guid>https://lobste.rs/s/u8uvlr</guid>
+      <author>da.vidbuchanan.co.uk by retr0id</author>
+      <pubDate>Sat, 03 Oct 2026 06:58:14 -0500</pubDate>
+      <comments>https://lobste.rs/s/u8uvlr/how_hack_time_with_c2pa</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/u8uvlr/how_hack_time_with_c2pa"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>security</category>
+      <category>cryptography</category>
+    </item>
+  </channel>
+</rss>

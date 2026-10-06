@@ -11,6 +11,59 @@ import { RawItemDraft as DraftSchema } from "./types.js";
 import { httpPing } from "./ping.js";
 
 const API = "https://hacker-news.firebaseio.com/v0";
+const ALGOLIA_API = "https://hn.algolia.com/api/v1";
+
+/** Keyword search (config_json.keywords) for category runs. */
+export function configuredKeywords(config: Record<string, unknown>): string[] {
+  const raw = config.keywords;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((k): k is string => typeof k === "string" && k.trim() !== "").map((k) => k.trim());
+}
+
+const AlgoliaHit = z.object({
+  objectID: z.union([z.string(), z.number()]),
+  title: z.string().nullable().optional(),
+  url: z.string().nullable().optional(),
+  author: z.string().nullable().optional(),
+  points: z.number().nullable().optional(),
+  num_comments: z.number().nullable().optional(),
+  created_at_i: z.number().nullable().optional(),
+});
+const AlgoliaSearch = z.object({ hits: z.array(AlgoliaHit) });
+
+/** One keyword → drafts. Exported for tests; collect() loops keywords. */
+export async function searchHackernews(
+  get: (url: string) => Promise<{ status: number; text: string }>,
+  keyword: string,
+  limit: number,
+): Promise<RawItemDraft[]> {
+  const since = Math.floor(Date.now() / 1000) - 7 * 24 * 3600;
+  const url =
+    `${ALGOLIA_API}/search?query=${encodeURIComponent(keyword)}&tags=story` +
+    `&numericFilters=created_at_i>${String(since)}&hitsPerPage=${String(limit)}`;
+  const res = await get(url);
+  if (res.status !== 200) throw new Error(`algolia HTTP ${String(res.status)}`);
+  const drafts: RawItemDraft[] = [];
+  for (const hit of AlgoliaSearch.parse(JSON.parse(res.text)).hits.slice(0, limit)) {
+    const title = hit.title?.trim();
+    if (!title) continue;
+    const id = String(hit.objectID);
+    drafts.push(
+      DraftSchema.parse({
+        source: "hackernews",
+        source_item_id: id,
+        url: hit.url ?? `https://news.ycombinator.com/item?id=${id}`,
+        title,
+        snippet: "",
+        author: hit.author ?? null,
+        published_at: hit.created_at_i ? new Date(hit.created_at_i * 1000).toISOString() : null,
+        engagement_score: hit.points ?? 0,
+        engagement: { comments: hit.num_comments ?? 0 },
+      } satisfies RawItemDraftInput),
+    );
+  }
+  return drafts;
+}
 
 const HnItem = z.object({
   id: z.number(),
@@ -81,6 +134,26 @@ export const hackernewsCollector: Collector = {
     });
 
     try {
+      // Category runs pass keywords: Algolia search instead of the front page.
+      const keywords = configuredKeywords(ctx.config);
+      if (keywords.length > 0) {
+        const perKeyword = Math.max(1, Math.ceil(ctx.limit / keywords.length));
+        const items: RawItemDraft[] = [];
+        for (const keyword of keywords) {
+          if (items.length >= ctx.limit) break;
+          try {
+            const found = await searchHackernews(
+              (url) => ctx.http.get(url),
+              keyword,
+              Math.min(perKeyword, ctx.limit - items.length),
+            );
+            items.push(...found);
+          } catch (error) {
+            ctx.log.debug({ err: error, keyword }, "hn keyword search failed");
+          }
+        }
+        return finish(items.slice(0, ctx.limit));
+      }
       const listRes = await ctx.http.get(`${API}/topstories.json`);
       if (listRes.status !== 200) {
         return finish([], `topstories HTTP ${String(listRes.status)}`);
