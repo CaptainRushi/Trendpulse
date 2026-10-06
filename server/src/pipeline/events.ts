@@ -13,7 +13,12 @@ export type PipelineEventType =
   | "error"
   | "sample"
   | "top_changed"
-  | "cycle";
+  | "cycle"
+  | "sort_batch"
+  | "sort_clusters"
+  | "sort_topics"
+  | "sort_rank"
+  | "sort_phase";
 
 export interface PipelineEvent {
   seq: number;

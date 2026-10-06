@@ -15,6 +15,7 @@ import { SourceKey } from "../sheets/schema.js";
 import { estimateRun } from "../categories/estimate.js";
 import { normalizeScope } from "../categories/registry.js";
 import { categoryOverrides } from "../categories/collect.js";
+import { replaySortEvents } from "../pipeline/sortEvents.js";
 
 const RunRow = z.object({
   run_id: z.string(),
@@ -211,6 +212,38 @@ export function registerRuns(app: FastifyInstance, ctx: AppContext): void {
       | { id: string }
       | undefined;
     if (!row) throw notFound(`No run '${params.data.id}'.`);
-    streamRunEvents(request, reply, appEvents(ctx), params.data.id);
+    const header = request.headers["last-event-id"];
+    const lastId = Array.isArray(header) ? header[0] : header;
+    const afterSeq = lastId !== undefined && /^\d+$/.test(lastId) ? Number(lastId) : undefined;
+    reply.hijack();
+    streamRunEvents(request, reply, appEvents(ctx), params.data.id, afterSeq === undefined ? {} : { afterSeq });
+  });
+
+  app.get("/api/runs/active", () => {
+    const row = ctx.db
+      .prepare("SELECT id, scope_key FROM runs WHERE status = 'running' ORDER BY started_at DESC LIMIT 1")
+      .get() as { id: string; scope_key: string } | undefined;
+    if (!row) return { run_id: null, scope: "all" };
+    return { run_id: row.id, scope: row.scope_key || "all" };
+  });
+
+  app.get("/api/runs/:id/sort-state", (request) => {
+    const params = z.object({ id: z.string().min(1) }).safeParse(request.params);
+    if (!params.success) throw badRequest("Invalid run id.");
+    const row = ctx.db.prepare("SELECT id, status FROM runs WHERE id = ?").get(params.data.id) as
+      | { id: string; status: string }
+      | undefined;
+    if (!row) throw notFound(`No run '${params.data.id}'.`);
+    // Snapshot == replay by construction: state rebuilds from stored events.
+    const events = replaySortEvents(ctx.db, params.data.id);
+    const phases = events
+      .filter((e) => e["type"] === "sort_phase")
+      .map((e) => (typeof e["phase"] === "string" ? e["phase"] : ""));
+    return {
+      run_id: params.data.id,
+      status: row.status,
+      phase: phases.length > 0 ? phases[phases.length - 1] : null,
+      events,
+    };
   });
 }

@@ -91,7 +91,7 @@ function toRecord(
     merged_sources: item.merged_sources,
     extraction_model: item.extraction_model,
     source_label: null,
-    target_category: null,
+    target_category: item.target_category,
   });
 }
 

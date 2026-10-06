@@ -35,6 +35,8 @@ import { pipelineBus } from "./events.js";
 import type { EventBus } from "./events.js";
 import { normalizeScope, effectiveSources } from "../categories/registry.js";
 import { CATEGORY_MAX_ITEMS, categoryOverrides, collectCategory } from "../categories/collect.js";
+import { chunkBatch, cutTitle, emitSortEvent } from "./sortEvents.js";
+import type { SortPhase } from "./sortEvents.js";
 import type { StateDb } from "../db/sqlite.js";
 import { createExtractor, type LlmExtractor } from "../llm/extract.js";
 import { createExtractorClient } from "../llm/factory.js";
@@ -90,7 +92,17 @@ export const STAGES = [
 ] as const;
 export type StageName = (typeof STAGES)[number];
 
-const SORT_STAGES: StageName[] = ["sort_classify", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"];
+const SORT_STAGES: StageName[] = ["sort_classify", "sort_cluster",
+  "sort_write", "score", "persist_sorted", "finalize"];
+
+/** Animation phase per sort stage (persist_sorted closes with "done"). */
+const SORT_PHASES: Partial<Record<StageName, SortPhase>> = {
+  sort_classify: "classify",
+  sort_focus: "filter",
+  sort_cluster: "cluster",
+  sort_write: "write",
+  score: "rank",
+};
 const PRE_PERSIST: StageName[] = ["collect", "normalize", "dedupe", "persist_raw"];
 
 export type RunTrigger = "cron" | "manual" | "catchup";
@@ -203,9 +215,31 @@ function isOperationalError(error: unknown): boolean {
     error instanceof JevValidationError ||
     error instanceof JevHttpError ||
     error instanceof JevTimeoutError ||
+    error instanceof SheetsApiError ||
+    error instanceof LlmValidationError ||
+    error instanceof LlmHttpError ||
+    error instanceof LlmTimeoutError ||
+    error instanceof JevValidationError ||
+    error instanceof JevHttpError ||
+    error instanceof JevTimeoutError ||
     error instanceof JevBudgetExceeded ||
     error instanceof NoDataError
   );
+}
+
+/** Cluster sharing the most evidence with a scored topic (for sort_rank). */
+function bestCluster(evidenceIds: string[], clusters: { clusterId: string; itemIds: string[] }[]): string {
+  const evidence = new Set(evidenceIds);
+  let best = "";
+  let bestOverlap = 0;
+  for (const cluster of clusters) {
+    const overlap = cluster.itemIds.filter((id) => evidence.has(id)).length;
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = cluster.clusterId;
+    }
+  }
+  return best !== "" ? best : (clusters[0]?.clusterId ?? "");
 }
 
 export class Orchestrator {
@@ -433,9 +467,14 @@ export class Orchestrator {
     }
   }
 
+  /** Sort animation phase per stage (Doc 17 S4); persist_sorted closes it. */
   private async runStage(exec: Execution, stage: StageName, handler: () => Promise<void> | void): Promise<void> {
     this.setStage(exec.runId, stage, "running");
     this.events.emit(exec.runId, "stage", { stage, status: "running" });
+    const phase = SORT_PHASES[stage];
+    if (phase !== undefined) {
+      emitSortEvent(this.db, this.events, exec.runId, "sort_phase", { phase });
+    }
     this.events.emit(exec.runId, "progress", {
       stage,
       done: exec.requested.indexOf(stage),
@@ -453,6 +492,9 @@ export class Orchestrator {
     }
     this.setStage(exec.runId, stage, "done");
     this.events.emit(exec.runId, "stage", { stage, status: "done" });
+    if (stage === "persist_sorted") {
+      emitSortEvent(this.db, this.events, exec.runId, "sort_phase", { phase: "done" });
+    }
   }
 
   /** normalize/dedupe/engagement_norm share prepareRunItems' atomic unit. */
@@ -669,6 +711,40 @@ export class Orchestrator {
       fallbackWrites: stats.fallbackUsed,
       budgetStopped: stats.budgetStopped,
     });
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const batches = chunkBatch(labeled, 100);
+    const cost = this.llmCost(exec.runId);
+    batches.forEach((batch, i) => {
+      emitSortEvent(this.db, this.events, exec.runId, "sort_batch", {
+        stage: "classify",
+        items: batch.map((entry) => ({
+          id: entry.itemId,
+          t: cutTitle(byId.get(entry.itemId)?.title ?? ""),
+          c: entry.labels.category.toLowerCase(),
+          q: entry.labels.quality,
+          f: entry.labels.classifier === "fallback",
+          d: entry.labels.quality < this.config.qualityMin,
+          o: false,
+        })),
+        done: Math.min((i + 1) * 100, labeled.length),
+        total: labeled.length,
+        jev_calls: stats.classified,
+        fallback_calls: stats.fallbackUsed,
+        cost_usd: cost,
+      });
+    });
+  }
+
+  /** LLM spend so far this run (for the animation counters). */
+  private llmCost(runId: string): number {
+    try {
+      const row = this.db.prepare("SELECT COALESCE(SUM(cost_usd), 0) AS n FROM llm_calls WHERE run_id = ?").get(runId) as {
+        n: number | null;
+      };
+      return row.n ?? 0;
+    } catch {
+      return 0;
+    }
   }
 
   private loadClassifyDetail(exec: Execution): { labels: { itemId: string; labels: ItemLabelRecord["labels"] }[] } {
@@ -696,6 +772,17 @@ export class Orchestrator {
       .filter((entry) => !wanted.has(entry.labels.category.toLowerCase()) && entry.labels.category_confidence >= 0.6)
       .map((entry) => ({ itemId: entry.itemId, category: entry.labels.category, confidence: entry.labels.category_confidence }));
     this.setStageDetail(exec.runId, "sort_focus", { scope: exec.scope, mode: exec.focusMode, excluded });
+    if (excluded.length > 0) {
+      emitSortEvent(this.db, this.events, exec.runId, "sort_batch", {
+        stage: "filter",
+        items: excluded.map((entry) => ({ id: entry.itemId, t: "", c: entry.category.toLowerCase(), q: 0, f: false, d: false, o: true })),
+        done: excluded.length,
+        total: excluded.length,
+        jev_calls: 0,
+        fallback_calls: 0,
+        cost_usd: this.llmCost(exec.runId),
+      });
+    }
   }
 
   private focusExcluded(exec: Execution): Set<string> {
@@ -729,6 +816,17 @@ export class Orchestrator {
     }
     const aggregated = aggregateClusters(clusters, aggregateById);
     this.setStageDetail(exec.runId, "sort_cluster", { clusters, aggregated });
+    emitSortEvent(this.db, this.events, exec.runId, "sort_clusters", {
+      clusters: clusters.map((cluster) => {
+        const agg = aggregated.find((a) => a.clusterId === cluster.id);
+        return {
+          id: cluster.id,
+          category: (agg?.category ?? "").toLowerCase(),
+          size: cluster.itemIds.length,
+          member_ids: cluster.itemIds.slice(0, 12),
+        };
+      }),
+    });
   }
 
   private sameStoryOption(exec: Execution): { sameStory?: SameStoryCheck | undefined } {
@@ -769,6 +867,11 @@ export class Orchestrator {
     const inputs = toWriterInputs(aggregated, byId);
     const result = await writeTopics(this.sorterWriter(exec.runId), inputs, {
       batchSize: exec.settings.sortBatchSize,
+      onBatch: (batch) => {
+        emitSortEvent(this.db, this.events, exec.runId, "sort_topics", {
+          topics: batch.map((w) => ({ cluster_id: w.text.cluster_id, title: cutTitle(w.text.title) })),
+        });
+      },
     });
     const written: WrittenTopic[] = result.topics;
     const failedCards = written.filter((w) => w.writeFailed).length;
@@ -804,6 +907,14 @@ export class Orchestrator {
       topics: scored.topics,
       droppedNoEvidence: scored.droppedNoEvidence,
       momentumCoerced: scored.momentumCoerced,
+    });
+    const { aggregated: scoredAgg } = this.loadClusterDetail(exec);
+    emitSortEvent(this.db, this.events, exec.runId, "sort_rank", {
+      ranks: scored.topics.map((topic, i) => ({
+        cluster_id: bestCluster(topic.evidence_item_ids, scoredAgg),
+        rank: i + 1,
+        score: topic.trend_score,
+      })),
     });
   }
 

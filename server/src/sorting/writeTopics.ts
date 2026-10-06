@@ -141,7 +141,7 @@ async function writeBatch(
 export async function writeTopics(
   client: LlmClient,
   clusters: WriterClusterInput[],
-  options: { batchSize: number; tag?: string; maxBatchChars?: number },
+  options: { batchSize: number; tag?: string; maxBatchChars?: number; onBatch?: (batch: WrittenTopic[]) => void },
 ): Promise<{ topics: WrittenTopic[]; stats: WriteStats }> {
   const stats: WriteStats = { batches: 0, repaired: 0, splits: 0, followUps: 0, fallbacks: 0 };
   const topics: WrittenTopic[] = [];
@@ -152,7 +152,9 @@ export async function writeTopics(
   const flush = async (): Promise<void> => {
     if (batch.length === 0) return;
     stats.batches += 1;
-    topics.push(...(await writeBatch(client, batch, tag, stats)));
+    const written = await writeBatch(client, batch, tag, stats);
+    topics.push(...written);
+    options.onBatch?.(written);
     batch = [];
     chars = 0;
   };
