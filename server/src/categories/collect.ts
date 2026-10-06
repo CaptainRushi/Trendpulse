@@ -6,7 +6,20 @@
 import { runCollectors } from "../collectors/registry.js";
 import type { CollectContext, RawItemDraft, SourceConfig, SourceStats } from "../collectors/types.js";
 import type { SourceKey } from "../sheets/schema.js";
-import type { CategorySource } from "./registry.js";
+import type { StateDb } from "../db/sqlite.js";
+import { readSettingsMap } from "../config/settings.js";
+import { validateCategorySources, type CategorySource } from "./registry.js";
+
+/** User overrides from the `category_sources` settings key ({} when absent). */
+export function categoryOverrides(db: StateDb): Record<string, CategorySource[]> {
+  const raw = readSettingsMap(db).get("category_sources");
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  try {
+    return validateCategorySources(raw);
+  } catch {
+    return {};
+  }
+}
 
 /** Per-source item cap for category fetches (spec default). */
 export const CATEGORY_MAX_ITEMS = 40;
@@ -39,16 +52,18 @@ export interface CategoryCollectResult {
  * skipped (CATRUN-06) instead of burning blocked requests.
  */
 export async function collectCategory(
-  ctx: CollectContext,
+  ctx: Omit<CollectContext, "config">,
   slug: string,
   sources: CategorySource[],
   limit: number = CATEGORY_MAX_ITEMS,
+  /** Credentials the registry entry cannot carry (e.g. from env). */
+  extraConfig: SourceConfig = {},
 ): Promise<CategoryCollectResult> {
   const keys: SourceKey[] = [];
   const configs: Partial<Record<SourceKey, SourceConfig>> = {};
   const skipped: SourceStats[] = [];
   for (const source of sources) {
-    if (source.collector === "reddit" && !hasRedditCreds(ctx.config)) {
+    if (source.collector === "reddit" && !hasRedditCreds(extraConfig)) {
       skipped.push({
         source: "reddit",
         status: "skipped",
@@ -61,6 +76,7 @@ export async function collectCategory(
     if (!keys.includes(source.collector)) keys.push(source.collector);
     configs[source.collector] = mergeCategoryConfig(configs[source.collector], source);
   }
+  if (configs["reddit"]) configs["reddit"] = { ...extraConfig, ...configs["reddit"] };
   if (keys.length === 0) return { items: [], stats: skipped };
   const out = await runCollectors(ctx, {
     keys,
@@ -72,12 +88,12 @@ export async function collectCategory(
 }
 
 function hasRedditCreds(config: SourceConfig): boolean {
-  const fromConfig =
+  const pair =
     typeof config.reddit_client_id === "string" &&
     config.reddit_client_id !== "" &&
     typeof config.reddit_client_secret === "string" &&
     config.reddit_client_secret !== "";
-  if (fromConfig) return true;
+  if (pair) return true;
   const envId = process.env["REDDIT_CLIENT_ID"] ?? "";
   const envSecret = process.env["REDDIT_CLIENT_SECRET"] ?? "";
   return envId !== "" && envSecret !== "";

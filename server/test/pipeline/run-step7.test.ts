@@ -111,7 +111,7 @@ describe("STEP 7 orchestrator", () => {
       expect(summary.status).toBe("success");
       expect([...STAGES]).toEqual([
         "collect", "normalize", "dedupe", "persist_raw", "sort_classify",
-        "sort_cluster", "sort_write", "score", "persist_sorted", "finalize",
+        "sort_focus", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize",
       ]);
       const rows = db
         .prepare("SELECT stage FROM run_stages WHERE run_id = ? ORDER BY rowid")

@@ -33,6 +33,8 @@ export interface NormalizedItem {
   region: string | null;
   content_hash: string;
   extraction_model: string | null;
+  /** Category-run tag; carried from collection to items_run (CATRUN). */
+  target_category: string | null;
 }
 
 export interface NormalizeStats {
@@ -175,7 +177,9 @@ export function detectLanguage(provided: string | null, title: string, snippet: 
 
 export type DropReason = "bad-url" | "empty-title";
 
-function normalizeOne(draft: RawItemDraft): { item: NormalizedItem } | { drop: DropReason } {
+function normalizeOne(
+  draft: RawItemDraft & { target_category?: string | null },
+): { item: NormalizedItem } | { drop: DropReason } {
   const url = canonicalizeUrl(draft.url);
   if (url === null) return { drop: "bad-url" };
   const title = cleanText(draft.title).slice(0, MAX_TITLE_LENGTH);
@@ -196,6 +200,7 @@ function normalizeOne(draft: RawItemDraft): { item: NormalizedItem } | { drop: D
       region: draft.region === null ? null : emptyToNull(draft.region),
       content_hash: contentHash(url, title),
       extraction_model: draft.extraction_model,
+      target_category: draft.target_category ?? null,
     },
   };
 }

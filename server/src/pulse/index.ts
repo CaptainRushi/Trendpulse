@@ -86,17 +86,18 @@ export function writeLatestSet(
   topics: IndexableTopic[],
   topN: number,
   sampledAt: string = new Date().toISOString(),
+  scope = "all",
 ): WriteSetResult {
   const previous = db
-    .prepare("SELECT topic_id FROM topic_index WHERE run_date = ? AND is_latest = 1 ORDER BY rank LIMIT 1")
-    .get(runDate) as { topic_id: string } | undefined;
-  db.prepare("UPDATE topic_index SET is_latest = 0 WHERE run_date = ? AND run_id <> ?").run(runDate, runId);
+    .prepare("SELECT topic_id FROM topic_index WHERE run_date = ? AND scope_key = ? AND is_latest = 1 ORDER BY rank LIMIT 1")
+    .get(runDate, scope) as { topic_id: string } | undefined;
+  db.prepare("UPDATE topic_index SET is_latest = 0 WHERE run_date = ? AND scope_key = ? AND run_id <> ?").run(runDate, scope, runId);
   const insertTopic = db.prepare(
-    "INSERT INTO topic_index (topic_id, run_id, run_date, rank, title, score, evidence_item_ids_json, created_at, is_latest) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1) " +
+    "INSERT INTO topic_index (topic_id, run_id, run_date, rank, title, score, evidence_item_ids_json, created_at, is_latest, scope_key) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
       "ON CONFLICT(topic_id) DO UPDATE SET run_id = excluded.run_id, run_date = excluded.run_date, " +
       "rank = excluded.rank, title = excluded.title, score = excluded.score, " +
-      "evidence_item_ids_json = excluded.evidence_item_ids_json, is_latest = 1",
+      "evidence_item_ids_json = excluded.evidence_item_ids_json, is_latest = 1, scope_key = excluded.scope_key",
   );
   const insertSample = db.prepare(
     "INSERT INTO topic_samples (topic_id, sampled_at, index_value, total, items_sampled, items_failed, detail_json) " +
@@ -106,7 +107,7 @@ export function writeLatestSet(
   const ranked = sortVisible(topics);
   let baselined = 0;
   ranked.forEach((topic, i) => {
-    insertTopic.run(topic.topic_id, runId, runDate, topic.rank, topic.title, topic.trend_score, JSON.stringify(topic.evidence_item_ids), sampledAt);
+    insertTopic.run(topic.topic_id, runId, runDate, topic.rank, topic.title, topic.trend_score, JSON.stringify(topic.evidence_item_ids), sampledAt, scope);
     if (i < topN) {
       const items = pickSampledItems(topic.evidence_item_ids, baselines);
       if (items.length > 0) {
@@ -163,10 +164,10 @@ export function selectTop(topics: IndexableTopic[]): IndexableTopic | null {
 }
 
 /** Latest set for a date (rank order), or [] when never indexed. */
-export function latestSet(db: StateDb, runDate: string): IndexedTopic[] {
+export function latestSet(db: StateDb, runDate: string, scope = "all"): IndexedTopic[] {
   const rows = db
-    .prepare("SELECT * FROM topic_index WHERE run_date = ? AND is_latest = 1 ORDER BY rank")
-    .all(runDate) as Parameters<typeof toIndexed>[0][];
+    .prepare("SELECT * FROM topic_index WHERE run_date = ? AND scope_key = ? AND is_latest = 1 ORDER BY rank")
+    .all(runDate, scope) as Parameters<typeof toIndexed>[0][];
   return rows.map(toIndexed);
 }
 
@@ -186,10 +187,12 @@ export function lastSampleAt(db: StateDb, runDate: string): string | null {
   return row?.at ?? null;
 }
 
-/** Most recent date with any indexed set, or null. */
-export function mostRecentDate(db: StateDb): string | null {
-  const row = db.prepare("SELECT run_date FROM topic_index ORDER BY run_date DESC LIMIT 1").get() as
-    | { run_date: string }
-    | undefined;
+/** Most recent date with any indexed set (optionally for one scope), or null. */
+export function mostRecentDate(db: StateDb, scope?: string): string | null {
+  const row = (
+    scope === undefined
+      ? db.prepare("SELECT run_date FROM topic_index ORDER BY run_date DESC LIMIT 1").get()
+      : db.prepare("SELECT run_date FROM topic_index WHERE scope_key = ? ORDER BY run_date DESC LIMIT 1").get(scope)
+  ) as { run_date: string } | undefined;
   return row?.run_date ?? null;
 }

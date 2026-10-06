@@ -14,7 +14,7 @@ import { streamRunEvents } from "./sse.js";
 import { SourceKey } from "../sheets/schema.js";
 import { estimateRun } from "../categories/estimate.js";
 import { normalizeScope } from "../categories/registry.js";
-import { categoryOverrides } from "./categories.js";
+import { categoryOverrides } from "../categories/collect.js";
 
 const RunRow = z.object({
   run_id: z.string(),
@@ -44,6 +44,8 @@ const PostRunsBody = z
       .optional(),
     sources: z.array(SourceKey).optional(),
     limit: z.number().int().min(1).optional(),
+    categories: z.array(z.string()).max(5).optional(),
+    mode: z.enum(["strict", "loose"]).optional(),
   })
   .strict();
 
@@ -171,6 +173,8 @@ export function registerRuns(app: FastifyInstance, ctx: AppContext): void {
       ...(parsed.data.stages ? { stages: parsed.data.stages } : {}),
       ...(parsed.data.sources ? { sources: parsed.data.sources } : {}),
       ...(parsed.data.limit !== undefined ? { limit: parsed.data.limit } : {}),
+      ...(parsed.data.categories ? { categories: parsed.data.categories } : {}),
+      ...(parsed.data.mode ? { mode: parsed.data.mode } : {}),
     });
     done.catch((error: unknown) => {
       appLogger(ctx).error(

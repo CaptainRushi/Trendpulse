@@ -24,6 +24,7 @@ import { HttpClient } from "../collectors/http.js";
 import { runCollectors } from "../collectors/registry.js";
 import { scrapingClient } from "../scraping/supervisor.js";
 import type { CollectContext, RawItemDraft, SourceStats } from "../collectors/types.js";
+import { RawItemDraft as DraftSchema } from "../collectors/types.js";
 import { createLogger } from "../utils/logger.js";
 import { DomainRateLimiter } from "../utils/rate-limit.js";
 import { ulid } from "../utils/ulid.js";
@@ -32,6 +33,8 @@ import { resolveEffectiveSettings } from "../config/settings.js";
 import type { EffectiveSettings } from "../config/settings.js";
 import { pipelineBus } from "./events.js";
 import type { EventBus } from "./events.js";
+import { normalizeScope, effectiveSources } from "../categories/registry.js";
+import { CATEGORY_MAX_ITEMS, categoryOverrides, collectCategory } from "../categories/collect.js";
 import type { StateDb } from "../db/sqlite.js";
 import { createExtractor, type LlmExtractor } from "../llm/extract.js";
 import { createExtractorClient } from "../llm/factory.js";
@@ -78,6 +81,7 @@ export const STAGES = [
   "dedupe",
   "persist_raw",
   "sort_classify",
+  "sort_focus",
   "sort_cluster",
   "sort_write",
   "score",
@@ -147,6 +151,10 @@ export interface StartRunOptions {
   limit?: number;
   /** Route-generated id for 202-before-completion (default: fresh ULID). */
   runId?: string;
+  /** Category slugs for a targeted run ([] = all). */
+  categories?: string[];
+  /** Focus mode for category runs (default strict). */
+  mode?: "strict" | "loose";
 }
 
 export interface RunSummary {
@@ -158,6 +166,17 @@ export interface RunSummary {
   topicsCount: number;
 }
 
+/** Categories stored on pre-scope runs may be anything; clean to slugs. */
+function parseCategoriesJson(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return [];
+  }
+}
+
 interface Execution {
   runId: string;
   runDate: string;
@@ -166,9 +185,13 @@ interface Execution {
   sources: SourceKey[];
   limitOverride?: number;
   settings: EffectiveSettings;
-  drafts: RawItemDraft[];
+  /** Drafts; category runs tag target_category (carried into items_run). */
+  drafts: (RawItemDraft & { target_category?: string | null })[];
   sourceStats: SourceStats[];
   partialReasons: string[];
+  scope: string;
+  categories: string[];
+  focusMode: "strict" | "loose";
 }
 
 function isOperationalError(error: unknown): boolean {
@@ -222,14 +245,27 @@ export class Orchestrator {
     }
     const runId = options.runId ?? ulid();
     const runDate = options.runDate ?? new Date().toLocaleDateString("en-CA", { timeZone: this.config.tz });
+    // Scope first: validation failures must precede the lock + run row.
+    let scope = "all";
+    try {
+      scope = normalizeScope(options.categories ?? []);
+    } catch (error) {
+      throw new RunRequestError(error instanceof Error ? error.message : "invalid categories");
+    }
+    const categories = scope === "all" ? [] : scope.split("+");
+    const focusMode = options.mode ?? "strict";
+    // Before the lock + run row: failures here leave nothing behind.
+    if (scope !== "all" && !this.hasUsableCategorySources(categories)) {
+      throw new RunRequestError(`CATEGORY_NO_SOURCES: none of [${categories.join(", ")}] has a usable source (reddit needs OAuth)`);
+    }
     acquirePipelineLock(this.db, runId);
     const startedAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO runs (id, run_date, trigger, status, stages_requested, started_at)
-         VALUES (?, ?, ?, 'running', ?, ?)`,
+        `INSERT INTO runs (id, run_date, trigger, status, stages_requested, started_at, scope_key, focus_mode, categories_json)
+         VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)`,
       )
-      .run(runId, runDate, options.trigger, JSON.stringify(requested), startedAt);
+      .run(runId, runDate, options.trigger, JSON.stringify(requested), startedAt, scope, focusMode, JSON.stringify(categories));
     for (const stage of requested) {
       this.setStage(runId, stage, "pending");
     }
@@ -251,6 +287,9 @@ export class Orchestrator {
       drafts: [],
       sourceStats: [],
       partialReasons: [...warnings],
+      scope,
+      categories,
+      focusMode,
     };
     if (options.limit !== undefined) exec.limitOverride = options.limit;
     const first = requested[0];
@@ -289,8 +328,8 @@ export class Orchestrator {
 
   /** Synchronous setup + deferred resume (same 202/409 contract as start). */
   retryRunBackground(runId: string, fromStage?: StageName): { runId: string; done: Promise<RunSummary> } {
-    const row = this.db.prepare("SELECT id, run_date, trigger, status, stages_requested FROM runs WHERE id = ?").get(runId) as
-      | { id: string; run_date: string; trigger: RunTrigger; status: string; stages_requested: string }
+    const row = this.db.prepare("SELECT id, run_date, trigger, status, stages_requested, scope_key, focus_mode, categories_json FROM runs WHERE id = ?").get(runId) as
+      | { id: string; run_date: string; trigger: RunTrigger; status: string; stages_requested: string; scope_key: string; focus_mode: string; categories_json: string }
       | undefined;
     if (!row) throw new RunNotFoundError(runId);
     const requested = JSON.parse(row.stages_requested) as StageName[];
@@ -339,6 +378,9 @@ export class Orchestrator {
       drafts: [],
       sourceStats: this.loadSourceStats(runId),
       partialReasons: [...warnings],
+      scope: row.scope_key || "all",
+      categories: parseCategoriesJson(row.categories_json),
+      focusMode: row.focus_mode === "loose" ? "loose" : "strict",
     };
     const done = this.runLocked(exec, from);
     return { runId, done };
@@ -372,6 +414,9 @@ export class Orchestrator {
       },
       persist_raw: () => this.stagePersistRaw(exec),
       sort_classify: () => this.stageSortClassify(exec),
+      sort_focus: () => {
+        this.stageSortFocus(exec);
+      },
       sort_cluster: () => this.stageSortCluster(exec),
       sort_write: () => this.stageSortWrite(exec),
       score: () => {
@@ -417,7 +462,20 @@ export class Orchestrator {
 
   // ── stages ─────────────────────────────────────────────────────────────
 
+  /** Any effective source callable (reddit needs OAuth creds). */
+  private hasUsableCategorySources(categories: string[]): boolean {
+    const overrides = categoryOverrides(this.db);
+    const creds = this.config.redditClientId !== "" && this.config.redditClientSecret !== "";
+    return categories.some((slug) =>
+      effectiveSources(slug, overrides).some((source) => source.collector !== "reddit" || creds),
+    );
+  }
+
   private async stageCollect(exec: Execution): Promise<void> {
+    if (exec.scope !== "all") {
+      await this.stageCollectCategory(exec);
+      return;
+    }
     const { limits, configs } = this.sourceLimitsConfigs(exec.sources, exec.limitOverride);
     const ctx = this.collectContext(exec.runId, exec.limitOverride);
     const out = await runCollectors(ctx, { keys: exec.sources, limits, configs });
@@ -446,6 +504,67 @@ export class Orchestrator {
     exec.drafts = out.items;
     exec.sourceStats = out.stats;
     this.setStageDetail(exec.runId, "collect", { keys: exec.sources });
+  }
+
+  /**
+   * Category collect (Doc 17 S3): only the scope's registry sources run
+   * (general sources are never called); today's stored items are assembled
+   * alongside so stored labels get reused. Drafts carry target_category
+   * through normalize into items_run.
+   */
+  private async stageCollectCategory(exec: Execution): Promise<void> {
+    const base = this.collectContext(exec.runId, exec.limitOverride);
+    const overrides = categoryOverrides(this.db);
+    const drafts: (RawItemDraft & { target_category?: string | null })[] = [];
+    const stats: SourceStats[] = [];
+    const redditCreds =
+      this.config.redditClientId !== "" && this.config.redditClientSecret !== ""
+        ? { reddit_client_id: this.config.redditClientId, reddit_client_secret: this.config.redditClientSecret }
+        : {};
+    for (const slug of exec.categories) {
+      const sources = effectiveSources(slug, overrides);
+      const out = await collectCategory({ ...base, limit: CATEGORY_MAX_ITEMS }, slug, sources, CATEGORY_MAX_ITEMS, redditCreds);
+      drafts.push(...out.items);
+      stats.push(...out.stats);
+      for (const stat of out.stats) {
+        this.events.emit(exec.runId, "source", {
+          source: `${stat.source}:${slug}`,
+          status: stat.status,
+          items: stat.items,
+          duration_ms: stat.duration_ms,
+        });
+      }
+    }
+    // Assemble: today's stored items join the working set; prepareRunItems
+    // dedupes by hash and the seen-filter drops re-persisted rows, so a
+    // same-scope rerun adds ~0 raw rows (CATRUN-14).
+    const seenUrls = new Set(drafts.map((d) => d.url));
+    const stored = readRunItemsByDate(this.db, exec.runDate);
+    for (const record of stored) {
+      if (seenUrls.has(record.url)) continue;
+      seenUrls.add(record.url);
+      const parsed = DraftSchema.parse(record);
+      drafts.push({ ...parsed, target_category: record.target_category ?? null });
+    }
+    const finishedAt = new Date().toISOString();
+    const insertStats = this.db.prepare(
+      `INSERT OR REPLACE INTO run_source_stats (run_id, source, status, items, duration_ms, error)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    const touchSource = this.db.prepare(
+      `UPDATE sources SET last_status = ?, last_error = ?, last_run_at = ?, last_items = ? WHERE key = ?`,
+    );
+    for (const stat of stats) {
+      insertStats.run(exec.runId, stat.source, stat.status, stat.items, stat.duration_ms, stat.error);
+      touchSource.run(stat.status, stat.error, finishedAt, stat.items, stat.source);
+      if (stat.status === "error" || stat.status === "blocked") {
+        exec.partialReasons.push(`source ${stat.source}: ${stat.error ?? "unknown error"}`);
+      }
+    }
+    this.db.prepare("UPDATE runs SET items_collected = ? WHERE id = ?").run(drafts.length, exec.runId);
+    exec.drafts = drafts;
+    exec.sourceStats = stats;
+    this.setStageDetail(exec.runId, "collect", { scope: exec.scope, categories: exec.categories });
   }
 
   private async stagePrepare(exec: Execution): Promise<void> {
@@ -560,10 +679,36 @@ export class Orchestrator {
     return detail as { labels: { itemId: string; labels: ItemLabelRecord["labels"] }[] };
   }
 
+  /**
+   * Focus filter (Doc 17 S3): strict category runs exclude items Jev placed
+   * outside the scope with confidence ≥ 0.6 (kept raw, never deleted).
+   * Scope "all" and loose mode exclude nothing. Exclusions live in the
+   * stage detail so cluster stays deterministic on resume.
+   */
+  private stageSortFocus(exec: Execution): void {
+    if (exec.scope === "all" || exec.focusMode === "loose") {
+      this.setStageDetail(exec.runId, "sort_focus", { scope: exec.scope, mode: exec.focusMode, excluded: [] });
+      return;
+    }
+    const classified = this.loadClassifyDetail(exec);
+    const wanted = new Set(exec.categories);
+    const excluded = classified.labels
+      .filter((entry) => !wanted.has(entry.labels.category.toLowerCase()) && entry.labels.category_confidence >= 0.6)
+      .map((entry) => ({ itemId: entry.itemId, category: entry.labels.category, confidence: entry.labels.category_confidence }));
+    this.setStageDetail(exec.runId, "sort_focus", { scope: exec.scope, mode: exec.focusMode, excluded });
+  }
+
+  private focusExcluded(exec: Execution): Set<string> {
+    const detail = this.stageDetail(exec.runId, "sort_focus") as { excluded?: { itemId: string }[] } | null;
+    if (!detail || !Array.isArray(detail.excluded)) return new Set();
+    return new Set(detail.excluded.map((entry) => entry.itemId));
+  }
+
   private async stageSortCluster(exec: Execution): Promise<void> {
     const classified = this.loadClassifyDetail(exec);
     const labelMap = new Map(classified.labels.map((entry) => [entry.itemId, entry.labels]));
-    const items = this.sortItems(exec).filter((item) => labelMap.has(item.id));
+    const excluded = this.focusExcluded(exec);
+    const items = this.sortItems(exec).filter((item) => labelMap.has(item.id) && !excluded.has(item.id));
     const clusters = await clusterItems(
       items.map((item) => ({ id: item.id, title: item.title, snippet: item.snippet })),
       this.sameStoryOption(exec),
@@ -684,7 +829,9 @@ export class Orchestrator {
     if (!detail || !Array.isArray(detail.topics)) {
       throw new RunRequestError(`score output missing for run ${exec.runId} — run score first`);
     }
-    const topics = detail.topics as SortedTrendRecord[];
+    const topics = (detail.topics as SortedTrendRecord[]).map((topic) =>
+      topic.scope === exec.scope ? topic : { ...topic, scope: exec.scope },
+    );
     const repo = this.repo();
     if (topics.length > 0) {
       const existing = await repo.readSorted({ runDate: exec.runDate, onlyLatest: false });
@@ -693,14 +840,15 @@ export class Orchestrator {
       );
       const missing = topics.filter((topic) => !present.has(topic.topic_id));
       if (missing.length > 0) await repo.appendSorted(missing);
-      await repo.markLatest(exec.runDate, exec.runId);
+      await repo.markLatest(exec.runDate, exec.runId, exec.scope);
     }
     // Digest: garnish, not load-bearing — a persistent violation skips the
     // row (run goes partial) instead of failing the stage and forcing a
     // retry that would double-append the sorted rows above.
     let digestSkipped = false;
     const digestRow = await repo.readDigest(exec.runDate);
-    if (topics.length > 0 && !(digestRow.row && digestRow.row.run_id === exec.runId)) {
+    // Digest is an all-scope artifact only (CATRUN: category runs skip it).
+    if (exec.scope === "all" && topics.length > 0 && !(digestRow.row && digestRow.row.run_id === exec.runId)) {
       try {
         const top = [...topics].sort((a, b) => a.rank - b.rank).slice(0, 10);
         const digest = await generateDigest(this.sorterWriter(exec.runId), top);
@@ -736,7 +884,7 @@ export class Orchestrator {
     if (topics.length > 0) {
       try {
         const { writeLatestSet } = await import("../pulse/index.js");
-        const pulse = writeLatestSet(this.db, exec.runId, exec.runDate, topics, this.config.pulseTopN);
+        const pulse = writeLatestSet(this.db, exec.runId, exec.runDate, topics, this.config.pulseTopN, undefined, exec.scope);
         if (pulse.topChanged) {
           this.events.emit("pulse", "top_changed", { date: exec.runDate, topic_id: topics[0]?.topic_id ?? "" });
         }
@@ -792,7 +940,7 @@ export class Orchestrator {
           tokens_out: usage.tokensOut,
           errors: exec.partialReasons,
           app_version: APP_VERSION,
-          categories: [], // S3 threads the run categories through here.
+          categories: exec.categories,
         }),
       );
     }

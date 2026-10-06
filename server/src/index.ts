@@ -6,7 +6,7 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config/env.js";
 import { applyMigrations, openDatabase } from "./db/sqlite.js";
 import { Orchestrator } from "./pipeline/orchestrator.js";
-import { PipelineScheduler } from "./scheduler/cron.js";
+import { PipelineScheduler, resolveCronCategories } from "./scheduler/cron.js";
 import { recoverOnBoot } from "./scheduler/lock.js";
 import { ScraplingSupervisor, setScrapingSupervisor } from "./scraping/supervisor.js";
 import { createLogger, setRootLogger } from "./utils/logger.js";
@@ -129,7 +129,11 @@ async function main(): Promise<void> {
     cronExpression: config.scheduleCron,
     timezone: config.tz,
     log: logger,
-    onTrigger: (trigger) => orchestrator.startRun({ trigger }),
+    onTrigger: (trigger) => {
+      // Cron honors the default_categories settings key (empty = all).
+      const categories = resolveCronCategories(db);
+      return orchestrator.startRun({ trigger, ...(categories.length > 0 ? { categories } : {}) });
+    },
   });
   scheduler.start();
 

@@ -10,6 +10,15 @@ import { createLogger } from "../utils/logger.js";
 import type { StateDb } from "../db/sqlite.js";
 import type { RunTrigger } from "../pipeline/orchestrator.js";
 import { LockBusyError } from "./lock.js";
+import { readSettingsMap } from "../config/settings.js";
+
+/** Cron scope from the default_categories settings key ([] = all). */
+export function resolveCronCategories(db: StateDb): string[] {
+  const raw = readSettingsMap(db).get("default_categories");
+  if (!Array.isArray(raw)) return [];
+  const clean = raw.filter((s): s is string => typeof s === "string" && s.trim() !== "");
+  return [...new Set(clean)];
+}
 
 export interface SchedulerOptions {
   cronExpression: string;

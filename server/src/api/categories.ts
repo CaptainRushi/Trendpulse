@@ -15,16 +15,7 @@ import {
   type CategorySource,
 } from "../categories/registry.js";
 import { writeSetting } from "../config/settings.js";
-
-export function categoryOverrides(db: AppContext["db"]): Record<string, CategorySource[]> {
-  const raw = readSettingsMap(db).get("category_sources");
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
-  try {
-    return validateCategorySources(raw);
-  } catch {
-    return {};
-  }
-}
+import { categoryOverrides } from "../categories/collect.js";
 
 function sourceStatus(ctx: AppContext, collector: string): { usable: boolean; hint: string } {
   if (collector === "reddit") {
