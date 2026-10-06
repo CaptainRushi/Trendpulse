@@ -11,7 +11,9 @@ describe("loadConfig", () => {
     expect(config.jevBaseUrl).toBe("");
     expect(config.jevModel).toBe("jev-latest");
     expect(config.sortBatchSize).toBe(30);
-    expect(config.topN).toBe(50);
+    expect(config.topPerCategory).toBe(5);
+    expect(config.maxCategories).toBe(6);
+    expect(config.includeGeneralSources).toBe(false);
     expect(config.retentionMode).toBe("archive");
     expect(config.dedupeDays).toBe(3);
   });

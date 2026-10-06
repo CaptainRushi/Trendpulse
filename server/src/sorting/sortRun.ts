@@ -90,7 +90,6 @@ export interface SortRunOptions {
   writerModel: string;
   batchSize: number;
   weights?: ScoreWeights | undefined;
-  topN?: number;
   runId: string;
   runDate: string;
   /** itemId → first_seen_date; absent = unknown (no `new` coercion for it). */
@@ -265,7 +264,6 @@ export async function runSorter(options: SortRunOptions, items: RawTrendRecord[]
     runDate: options.runDate,
     jevModel: options.classifierModel,
     weights: normalizeWeights(options.weights),
-    topN: options.topN ?? 50,
     firstSeenDates: options.firstSeen,
     promptVersion: SORT_PROMPT_VERSION,
   });

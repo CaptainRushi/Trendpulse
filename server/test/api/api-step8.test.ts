@@ -375,19 +375,19 @@ describe("STEP 8 API contract", () => {
         const settings = res.json<{ settings: Record<string, { value: unknown; is_set: boolean; secret: boolean; source: string }> }>().settings;
         expect(settings["omniroute_api_key"]).toMatchObject({ value: "••••", is_set: true, secret: true });
         expect(settings["github_token"]).toMatchObject({ value: "", is_set: false, secret: true });
-        expect(settings["top_n"]).toMatchObject({ value: 50, secret: false, source: "env" });
+        expect(settings["top_per_category"]).toMatchObject({ value: 5, secret: false, source: "env" });
         expect(res.body).not.toContain("omni-marker");
 
         const put = await app.inject({
           method: "PUT",
           url: "/api/settings",
-          payload: { top_n: 25, schedule_cron: "0 7 * * *" },
+          payload: { top_per_category: 3, schedule_cron: "0 7 * * *" },
         });
         expect(put.json<{ scheduler_restarted: boolean }>().scheduler_restarted).toBe(true);
         const back = await app.inject({ method: "GET", url: "/api/settings" });
         expect(
-          back.json<{ settings: Record<string, { value: unknown; source: string }> }>().settings["top_n"],
-        ).toMatchObject({ value: 25, source: "settings" });
+          back.json<{ settings: Record<string, { value: unknown; source: string }> }>().settings["top_per_category"],
+        ).toMatchObject({ value: 3, source: "settings" });
       } finally {
         await app.close();
       }

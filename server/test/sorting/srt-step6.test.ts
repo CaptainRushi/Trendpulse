@@ -163,15 +163,14 @@ function closeDb(options: SortRunOptions): void {
 }
 
 describe("STEP 6 sorter", () => {
-  it("SRT-01 100 items rank within TOP_N with contiguous ranks", async () => {
+  it("SRT-01 100 items rank contiguously with no global cut (Doc 19)", async () => {
     const items = Array.from({ length: 100 }, (_, i) =>
       makeItem({ title: `Distinct story number ${String(i)} about unrelated topic ${String(i * 7)}` }),
     );
-    const options = sortOptions({ topN: 50, digest: false });
+    const options = sortOptions({ digest: false });
     try {
       const firstSeen = new Map(items.map((item) => [item.id, "2026-09-30"] as [string, string]));
       const result = await runSorter({ ...options, firstSeen }, items);
-      expect(result.topics.length).toBeLessThanOrEqual(50);
       expect(result.topics.length).toBeGreaterThan(0);
       expect(result.topics.map((t) => t.rank)).toEqual(
         Array.from({ length: result.topics.length }, (_, i) => i + 1),

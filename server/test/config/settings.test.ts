@@ -21,7 +21,7 @@ describe("readSettingsMap", () => {
   it("parses value_json per key and names corrupt rows", () => {
     const db = openTestDb();
     try {
-      seed(db, { top_n: 25 });
+      seed(db, { sort_batch_size: 25 });
       db.prepare("INSERT INTO settings (key, value_json) VALUES ('broken', '{oops')").run();
       expect(() => readSettingsMap(db)).toThrow(/settings row 'broken' holds corrupt JSON/);
     } finally {
@@ -49,9 +49,9 @@ describe("resolveEffectiveSettings", () => {
   it("prefers settings rows over env-derived defaults", () => {
     const db = openTestDb();
     try {
-      seed(db, { top_n: 25, dedupe_days: 7, retention_mode: "delete" });
+      seed(db, { retention_days: 45, dedupe_days: 7, retention_mode: "delete" });
       const { settings, warnings } = resolveEffectiveSettings(db, config);
-      expect(settings.topN).toBe(25);
+      expect(settings.retentionDays).toBe(45);
       expect(settings.dedupeDays).toBe(7);
       expect(settings.retentionMode).toBe("delete");
       expect(settings.sortBatchSize).toBe(config.sortBatchSize);
@@ -65,11 +65,11 @@ describe("resolveEffectiveSettings", () => {
   it("warns and falls back on malformed rows", () => {
     const db = openTestDb();
     try {
-      seed(db, { score_weights: { engagement: 1 }, retention_mode: "shred", top_n: -5 });
+      seed(db, { score_weights: { engagement: 1 }, retention_mode: "shred", sort_batch_size: -5 });
       const { settings, warnings } = resolveEffectiveSettings(db, config);
       expect(settings.scoreWeights).toEqual(DEFAULT_SCORE_WEIGHTS);
       expect(settings.retentionMode).toBe("archive");
-      expect(settings.topN).toBe(config.topN); // silent fallback for plain ints
+      expect(settings.sortBatchSize).toBe(config.sortBatchSize); // silent fallback for plain ints
       expect(warnings).toHaveLength(2);
     } finally {
       db.close();
@@ -81,7 +81,7 @@ describe("resolveEffectiveSettings", () => {
     try {
       db.prepare("INSERT INTO settings (key, value_json) VALUES ('broken', '{oops')").run();
       const { settings, warnings } = resolveEffectiveSettings(db, config);
-      expect(settings.topN).toBe(config.topN);
+      expect(settings.sortBatchSize).toBe(config.sortBatchSize);
       expect(warnings).toHaveLength(1);
     } finally {
       db.close();

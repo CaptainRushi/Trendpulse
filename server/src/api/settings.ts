@@ -7,18 +7,20 @@
 import { existsSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { readSettingsMap } from "../config/settings.js";
+import { readSettingsMap, effectiveMaxCategories } from "../config/settings.js";
 import type { TrendPulseConfig } from "../config/env.js";
 import { DEFAULT_SCORE_WEIGHTS } from "../sorting/score.js";
 import { badRequest } from "./errors.js";
 import type { AppContext } from "./context.js";
-import { normalizeScope, validateCategorySources } from "../categories/registry.js";
+import { validateCategorySources, validateMyCategories } from "../categories/registry.js";
 
 type SettingType = "boolean" | "integer" | "string" | "string[]" | "weights" | "object";
 
 interface SettingSpec {
   type: SettingType;
   min?: number;
+  /** Inclusive upper bound for integers (e.g. TOP_PER_CATEGORY 1-10). */
+  max?: number;
   /** Resolve the effective value from env-derived config. */
   fromConfig: (config: TrendPulseConfig) => unknown;
   /** False for keys with no env backing (compiled default, not env). */
@@ -40,7 +42,6 @@ const SPECS: Record<string, SettingSpec> = {
   jev_model: { type: "string", fromConfig: (c) => c.jevModel },
   score_weights: { type: "weights", fromConfig: () => DEFAULT_SCORE_WEIGHTS, envBacked: false },
   sort_batch_size: { type: "integer", min: 1, fromConfig: (c) => c.sortBatchSize },
-  top_n: { type: "integer", min: 1, fromConfig: (c) => c.topN },
   retention_days: { type: "integer", min: 1, fromConfig: (c) => c.retentionDays },
   retention_mode: { type: "string", fromConfig: (c) => c.retentionMode },
   max_items_per_source: { type: "integer", min: 1, fromConfig: (c) => c.maxItemsPerSource },
@@ -49,7 +50,10 @@ const SPECS: Record<string, SettingSpec> = {
   llm_concurrency: { type: "integer", min: 1, fromConfig: (c) => c.llmConcurrency },
   llm_timeout_ms: { type: "integer", min: 1000, fromConfig: (c) => c.llmTimeoutMs },
   sheet_cache_ttl_s: { type: "integer", min: 0, fromConfig: (c) => c.sheetCacheTtlS },
-  default_categories: { type: "string[]", fromConfig: () => [], envBacked: false },
+  my_categories: { type: "string[]", fromConfig: () => [], envBacked: false },
+  top_per_category: { type: "integer", min: 1, max: 10, fromConfig: (c) => c.topPerCategory },
+  max_categories: { type: "integer", min: 1, fromConfig: (c) => c.maxCategories },
+  include_general_sources: { type: "boolean", fromConfig: (c) => c.includeGeneralSources },
   category_sources: { type: "object", fromConfig: () => ({}), envBacked: false },
   enable_playwright: { type: "boolean", fromConfig: (c) => c.enablePlaywright },
   theme: { type: "string", fromConfig: () => "system", envBacked: false },
@@ -85,8 +89,13 @@ function coerceValue(key: string, spec: SettingSpec, raw: unknown): unknown {
       if (typeof raw !== "boolean") fail("expected a boolean");
       return raw;
     case "integer":
-      if (typeof raw !== "number" || !Number.isInteger(raw) || raw < (spec.min ?? 0)) {
-        fail(`expected an integer >= ${String(spec.min ?? 0)}`);
+      if (
+        typeof raw !== "number" ||
+        !Number.isInteger(raw) ||
+        raw < (spec.min ?? 0) ||
+        (spec.max !== undefined && raw > spec.max)
+      ) {
+        fail(`expected an integer >= ${String(spec.min ?? 0)}${spec.max === undefined ? "" : ` and <= ${String(spec.max)}`}`);
       }
       return raw;
     case "string":
@@ -99,9 +108,9 @@ function coerceValue(key: string, spec: SettingSpec, raw: unknown): unknown {
       if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
         fail("expected an array of strings");
       }
-      if (key === "default_categories") {
+      if (key === "my_categories") {
         try {
-          normalizeScope(raw as string[]);
+          return validateMyCategories(raw);
         } catch (error) {
           fail(error instanceof Error ? error.message : "invalid categories");
         }
@@ -180,6 +189,16 @@ export function registerSettings(app: FastifyInstance, ctx: AppContext): void {
        ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = datetime('now')`,
     );
     const updated: string[] = [];
+    // my_categories is capped by the effective MAX_CATEGORIES: a
+    // max_categories value in the same payload wins, else the stored row,
+    // else the env default.
+    let maxCats = effectiveMaxCategories(ctx.db, ctx.config);
+    const pendingMax = updates["max_categories"];
+    if (pendingMax !== undefined) {
+      const maxSpec = SPECS["max_categories"];
+      if (!maxSpec) throw badRequest("Unknown setting 'max_categories'.");
+      maxCats = coerceValue("max_categories", maxSpec, pendingMax) as number;
+    }
     const write = ctx.db.transaction(() => {
       for (const [key, raw] of Object.entries(updates)) {
         const spec = SPECS[key];
@@ -190,6 +209,17 @@ export function registerSettings(app: FastifyInstance, ctx: AppContext): void {
             );
           }
           throw badRequest(`Unknown setting '${key}'.`);
+        }
+        if (key === "my_categories") {
+          try {
+            upsert.run(key, JSON.stringify(validateMyCategories(raw, maxCats)));
+          } catch (error) {
+            throw badRequest(
+              `Invalid value for 'my_categories': ${error instanceof Error ? error.message : "invalid categories"}.`,
+            );
+          }
+          updated.push(key);
+          continue;
         }
         upsert.run(key, JSON.stringify(coerceValue(key, spec, raw)));
         updated.push(key);

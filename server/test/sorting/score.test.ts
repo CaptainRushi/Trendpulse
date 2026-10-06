@@ -137,12 +137,12 @@ describe("scoreTopics golden", () => {
     expect(result.topics.map((t) => t.title)).toEqual(["Alpha", "Beta"]);
   });
 
-  it("keeps topN with sequential ranks", () => {
+  it("returns all ranked with sequential ranks (no global cut)", () => {
     const { topics, itemsById } = goldenFixture();
     const extra = topic({ title: "Gamma", relevance: 10, novelty: 10, item_ids: [topics[0]?.item_ids[0] ?? ""] });
-    const result = scoreTopics({ ...RUN, topics: [...topics, extra], itemsById, topN: 2 });
-    expect(result.topics).toHaveLength(2);
-    expect(result.topics.map((t) => t.rank)).toEqual([1, 2]);
+    const result = scoreTopics({ ...RUN, topics: [...topics, extra], itemsById });
+    expect(result.topics).toHaveLength(3);
+    expect(result.topics.map((t) => t.rank)).toEqual([1, 2, 3]);
   });
 
   it("ranks deterministically for fixed input (ids/timestamps excluded)", () => {

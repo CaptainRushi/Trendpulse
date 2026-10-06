@@ -196,9 +196,10 @@ export class SheetsRepo {
 
   async readSorted(
     filter: { runDate?: string; onlyLatest?: boolean } = {},
+    opts: { includeHidden?: boolean } = {},
   ): Promise<ReadResult<SortedTrendRecord>> {
     const onlyLatest = filter.onlyLatest ?? true;
-    const key = `sorted:${filter.runDate ?? ""}:${onlyLatest ? "latest" : "all"}`;
+    const key = `sorted:${filter.runDate ?? ""}:${onlyLatest ? "latest" : "all"}:${opts.includeHidden === true ? "withhidden" : "visible"}`;
     const cached = this.cache.get<{ rows: SortedTrendRecord[]; warnings: number }>(key);
     if (cached) return { rows: cached.value.rows, warnings: cached.value.warnings, ageS: cached.ageS };
     const values = await this.client.getAllValues(this.spreadsheetId, SORTED_TRENDS_TAB);
@@ -207,7 +208,7 @@ export class SheetsRepo {
       (r) =>
         (filter.runDate === undefined || r.run_date === filter.runDate) &&
         (!onlyLatest || r.is_latest) &&
-        !r.hidden,
+        (opts.includeHidden === true || !r.hidden),
     );
     this.cache.set(key, { rows, warnings: result.warnings });
     return { rows, warnings: result.warnings, ageS: 0 };
@@ -243,13 +244,21 @@ export class SheetsRepo {
   /**
    * Flip is_latest → FALSE on every other run's rows for the date.
    * The only cell-update the app performs (re-sort flow, TRD §9).
-   * Sorted rows flip only within the same scope (CATRUN-09); digest rows
-   * carry no scope (only scope "all" writes them).
+   * Sorted rows flip only within the same match: a Doc-17 scope (until Q3
+   * removes it) or a Jev category label (Doc 19: one set per date+category).
+   * A category refresh never touches the digest; digest rows carry no
+   * category (only full runs flip them).
    */
-  async markLatest(runDate: string, keepRunId: string, scope = "all"): Promise<{ flipped: number }> {
+  async markLatest(
+    runDate: string,
+    keepRunId: string,
+    match: { scope?: string; category?: string } = {},
+  ): Promise<{ flipped: number }> {
     let flipped = 0;
-    flipped += await this.flipStaleLatest(SORTED_TRENDS_TAB, "run_date", 2, "run_id", 1, "is_latest", 23, runDate, keepRunId, scope);
-    flipped += await this.flipStaleLatest(DAILY_DIGEST_TAB, "run_date", 0, "run_id", 1, "is_latest", 10, runDate, keepRunId);
+    flipped += await this.flipStaleLatest(SORTED_TRENDS_TAB, "run_date", 2, "run_id", 1, "is_latest", 23, runDate, keepRunId, match);
+    if (match.category === undefined) {
+      flipped += await this.flipStaleLatest(DAILY_DIGEST_TAB, "run_date", 0, "run_id", 1, "is_latest", 10, runDate, keepRunId, match.scope === undefined ? {} : { scope: match.scope });
+    }
     this.cache.invalidate();
     return { flipped };
   }
@@ -336,7 +345,7 @@ export class SheetsRepo {
     flagCol: number,
     runDate: string,
     keepRunId: string,
-    scope?: string,
+    match: { scope?: string; category?: string } = {},
   ): Promise<number> {
     const values = await this.client.getAllValues(this.spreadsheetId, tab);
     const header = values[0];
@@ -348,7 +357,8 @@ export class SheetsRepo {
       );
     }
     // Scope column is trailing and optional: old rows without it read as "all".
-    const scopeCol = scope === undefined ? -1 : header.indexOf("scope");
+    const scopeCol = match.scope === undefined ? -1 : header.indexOf("scope");
+    const categoryCol = match.category === undefined ? -1 : header.indexOf("category");
     const flagLetter = columnLetter(flagCol);
     const updates: { range: string; values: string[][] }[] = [];
     values.forEach((row, idx) => {
@@ -356,7 +366,8 @@ export class SheetsRepo {
       if (row[dateCol] !== runDate) return;
       if (row[idCol] === keepRunId) return;
       if (!isTruthyFlag(row[flagCol])) return;
-      if (scope !== undefined && (scopeCol < 0 ? "all" : (row[scopeCol] ?? "all")) !== scope) return;
+      if (match.scope !== undefined && (scopeCol < 0 ? "all" : (row[scopeCol] ?? "all")) !== match.scope) return;
+      if (match.category !== undefined && (categoryCol < 0 ? "" : (row[categoryCol] ?? "")) !== match.category) return;
       updates.push({ range: `${tab}!${flagLetter}${String(idx + 1)}`, values: [["FALSE"]] });
     });
     if (updates.length === 0) return 0;

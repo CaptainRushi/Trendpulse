@@ -87,7 +87,9 @@ const EnvSchema = z.object({
   PULSE_MAX_REQUESTS: numField(30).pipe(z.number().int().min(1)),
   PULSE_RETENTION_DAYS: numField(14).pipe(z.number().int().min(1)),
   SORT_BATCH_SIZE: numField(30).pipe(z.number().int().min(1)),
-  TOP_N: numField(50).pipe(z.number().int().min(1)),
+  MAX_CATEGORIES: numField(6).pipe(z.number().int().min(1)),
+  TOP_PER_CATEGORY: numField(5).pipe(z.number().int().min(1).max(10)),
+  INCLUDE_GENERAL_SOURCES: boolField(false),
   RETENTION_DAYS: numField(30).pipe(z.number().int().min(1)),
   RETENTION_MODE: z.enum(["archive", "delete"]).default("archive"),
 });
@@ -141,7 +143,9 @@ export interface TrendPulseConfig {
   pulseMaxRequests: number;
   pulseRetentionDays: number;
   sortBatchSize: number;
-  topN: number;
+  maxCategories: number;
+  topPerCategory: number;
+  includeGeneralSources: boolean;
   retentionDays: number;
   retentionMode: "archive" | "delete";
 }
@@ -218,7 +222,9 @@ export function loadConfig(env: RawEnv = process.env): TrendPulseConfig {
     pulseMaxRequests: e.PULSE_MAX_REQUESTS,
     pulseRetentionDays: e.PULSE_RETENTION_DAYS,
     sortBatchSize: e.SORT_BATCH_SIZE,
-    topN: e.TOP_N,
+    maxCategories: e.MAX_CATEGORIES,
+    topPerCategory: e.TOP_PER_CATEGORY,
+    includeGeneralSources: e.INCLUDE_GENERAL_SOURCES,
     retentionDays: e.RETENTION_DAYS,
     retentionMode: e.RETENTION_MODE,
   };

@@ -60,7 +60,6 @@ export interface ScoreOptions {
   runDate: string;
   jevModel: string;
   weights?: ScoreWeights;
-  topN?: number;
   /** itemId → first_seen_date (YYYY-MM-DD); absent = unknown, skips the check. */
   firstSeenDates?: Map<string, string>;
   /** Provenance marker; Day-1 sorter passes "w1" (legacy map/reduce: "v1"). */
@@ -96,7 +95,6 @@ function compareRank(
 
 export function scoreTopics(options: ScoreOptions): ScoreResult {
   const weights = options.weights ?? DEFAULT_SCORE_WEIGHTS;
-  const topN = options.topN ?? 50;
   const now = options.now ?? new Date().toISOString();
   let droppedNoEvidence = 0;
   let momentumCoerced = 0;
@@ -154,7 +152,8 @@ export function scoreTopics(options: ScoreOptions): ScoreResult {
     ),
   );
 
-  const topics = ranked.slice(0, topN).map((entry, index) =>
+  // No global cut: the caller keeps topN per category (Doc 19). Ranks stay sequential.
+  const topics = ranked.map((entry, index) =>
     SortedTrendRecord.parse({
       topic_id: ulid(),
       run_id: options.runId,

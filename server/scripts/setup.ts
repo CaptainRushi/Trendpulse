@@ -208,7 +208,8 @@ async function main(): Promise<void> {
   values.set("MAX_ITEMS_PER_SOURCE", String(await askInt("Max items per source", Number(get("MAX_ITEMS_PER_SOURCE", "50")), 1)));
   values.set("DEDUPE_DAYS", String(await askInt("Cross-day dedupe window (days)", Number(get("DEDUPE_DAYS", "3")), 0)));
   values.set("SORT_BATCH_SIZE", String(await askInt("Sort batch size", Number(get("SORT_BATCH_SIZE", "30")), 1)));
-  values.set("TOP_N", String(await askInt("Top N topics", Number(get("TOP_N", "50")), 1)));
+  values.set("MAX_CATEGORIES", String(await askInt("Max my-categories", Number(get("MAX_CATEGORIES", "6")), 1)));
+  values.set("TOP_PER_CATEGORY", String(await askInt("Top topics per category (1-10)", Number(get("TOP_PER_CATEGORY", "5")), 1)));
   values.set("RETENTION_DAYS", String(await askInt("Sheet retention (days)", Number(get("RETENTION_DAYS", "30")), 1)));
   const retentionMode = await ask("Retention mode (archive/delete)", get("RETENTION_MODE", "archive"));
   values.set("RETENTION_MODE", retentionMode === "delete" ? "delete" : "archive");

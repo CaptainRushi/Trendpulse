@@ -480,3 +480,10 @@ Files: server/src/{scheduler/cron,sheets/{schema,mappers,repo},pipeline/{orchest
 Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key columns stay (unread), scope params become category params, pulse keeps running. No Figure/Button (absent). No d3. No dev:fake pipeline (minimal seed).
 - **Definitions (locked):** 14 slugs; my_categories ordered 1-6, empty = NO_CATEGORIES_SELECTED; assignment ≥0.6 selected→it, ≥0.6 unselected→excluded(raw kept), <0.6→target or exclude, exactly one category; top5 by score, tie sources then newer; is_latest per (date, category), rank 1..n in-category; digest full-runs only; old scope rows = legacy (scope cell not in {"", "all"} ignored); hidden leaves 4, no backfill.
 - **Deviations (pre-declared):** score-then-write via placeholder-text scoring (score is text-free) + patch; cluster ids prefixed per partition; pulse per-category cut (sampler unchanged, hero-graph cut per cut list); S2b already cut; per-category settings editor cut; drag reorder cut; estimate popover kept (small); Explore link cut.
+
+## 2026-10-06 � top5-Q1 data model, settings, API (Doc 19, ponytail full)
+
+- **Ruling:** no UNIQUE index for is_latest per (run_date, category). A set holds up to TOP_PER_CATEGORY rows sharing (date, category, is_latest=1), so no row constraint can express it; legacy scoped sets also coexist. The invariant is code-maintained: sheets markLatest flips per category, SQLite writeLatestSet flips per category (Q3).
+- **Reason:** a partial unique index broke PULSE-15 and the multi-topic data model (proven by failing suite); code flips already own this for scopes.
+- **Cost if wrong:** duplicate latest rows per category if a flip path is missed; TOP5-16 covers subset-refresh isolation.
+- **Collateral fixes (own scope):** removed stale top_n/topN/default_categories refs (config, effective settings, sorter, cron, setup prompt, .env.example); repaired 3 pre-existing lint errors blocking gates (sortEvents assertion, catrun-s3 unused var + redundant assert, web sortanim unused container).

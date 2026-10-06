@@ -45,7 +45,9 @@ describe("STEP 1 foundation", () => {
     expect(config.maxItemsPerSource).toBe(50);
     expect(config.dedupeDays).toBe(3);
     expect(config.userAgent).toBe("TrendPulse/1.0 (+local)");
-    expect(config.topN).toBe(50);
+    expect(config.topPerCategory).toBe(5);
+    expect(config.maxCategories).toBe(6);
+    expect(config.includeGeneralSources).toBe(false);
     expect(config.retentionDays).toBe(30);
 
     expect(() => loadConfig({ PORT: "not-a-port", LOG_LEVEL: "verbose" })).toThrowError(
@@ -57,16 +59,17 @@ describe("STEP 1 foundation", () => {
     const db = openDatabase(":memory:");
     try {
       const applied = applyMigrations(db);
-      // Gap allowed: 001 then 003 then 006/008/009 (002/004/005/007 arrive later).
+      // Gap allowed: 001 then 003 then 006/008/009/010 (002/004/005/007 arrive later).
       expect(applied).toContain(1);
       expect(applied).toContain(3);
       expect(applied).toContain(6);
       expect(applied).toContain(8);
       expect(applied).toContain(9);
+      expect(applied).toContain(10);
       expect(applied).not.toContain(2);
       expect(applied).not.toContain(7);
       const versions = listMigrations().map((m) => m.version);
-      expect(versions).toEqual([1, 3, 6, 8, 9]);
+      expect(versions).toEqual([1, 3, 6, 8, 9, 10]);
 
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
@@ -80,7 +83,7 @@ describe("STEP 1 foundation", () => {
       const rows = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as {
         version: number;
       }[];
-      expect(rows.map((r) => r.version)).toEqual([1, 3, 6, 8, 9]);
+      expect(rows.map((r) => r.version)).toEqual([1, 3, 6, 8, 9, 10]);
     } finally {
       db.close();
     }

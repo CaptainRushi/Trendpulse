@@ -143,7 +143,7 @@ describe("SORTANIM-08 reduced motion", () => {
 describe("SORTANIM-09 a11y paths", () => {
   it("region, live announcements, keyboard bins, inert titles", async () => {
     stubSortState([batch(["h1"], "ai")]);
-    const { container } = render(
+    render(
       (() => {
         const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
         return (

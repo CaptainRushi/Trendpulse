@@ -72,7 +72,7 @@ export function emitSortEvent(
   } catch {
     // Telemetry must never break a run.
   }
-  bus.emit(runId, type as PipelineEventType, payload);
+  bus.emit(runId, type, payload);
 }
 
 /** Full replay for a run, oldest first. */

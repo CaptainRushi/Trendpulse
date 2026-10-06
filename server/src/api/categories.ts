@@ -17,7 +17,7 @@ import {
 import { writeSetting } from "../config/settings.js";
 import { categoryOverrides } from "../categories/collect.js";
 
-function sourceStatus(ctx: AppContext, collector: string): { usable: boolean; hint: string } {
+export function sourceStatus(ctx: AppContext, collector: string): { usable: boolean; hint: string } {
   if (collector === "reddit") {
     const usable = ctx.config.redditClientId !== "" && ctx.config.redditClientSecret !== "";
     return { usable, hint: usable ? "" : "needs Reddit OAuth (REDDIT_CLIENT_ID/SECRET)" };
@@ -34,7 +34,7 @@ function sourceStatus(ctx: AppContext, collector: string): { usable: boolean; hi
 export function registerCategories(app: FastifyInstance, ctx: AppContext): void {
   app.get("/api/categories", () => {
     const overrides = categoryOverrides(ctx.db);
-    const defaults = readSettingsMap(ctx.db).get("default_categories");
+    const defaults = readSettingsMap(ctx.db).get("my_categories");
     return {
       categories: (CATEGORY_SLUGS as readonly string[]).map((slug) => {
         const entry = CATEGORY_REGISTRY[slug];
@@ -46,7 +46,7 @@ export function registerCategories(app: FastifyInstance, ctx: AppContext): void 
           sources: sources.map((source) => ({ ...source, ...sourceStatus(ctx, source.collector) })),
         };
       }),
-      default_categories: Array.isArray(defaults) ? defaults : [],
+      my_categories: Array.isArray(defaults) ? defaults : [],
     };
   });
 

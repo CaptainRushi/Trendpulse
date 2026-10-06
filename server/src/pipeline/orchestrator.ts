@@ -898,7 +898,6 @@ export class Orchestrator {
       runDate: exec.runDate,
       jevModel: this.sorterClassifier(exec.runId).modelId,
       weights: exec.settings.scoreWeights,
-      topN: exec.settings.topN,
       firstSeenDates,
       promptVersion: "w1",
     });
@@ -951,7 +950,7 @@ export class Orchestrator {
       );
       const missing = topics.filter((topic) => !present.has(topic.topic_id));
       if (missing.length > 0) await repo.appendSorted(missing);
-      await repo.markLatest(exec.runDate, exec.runId, exec.scope);
+      await repo.markLatest(exec.runDate, exec.runId, { scope: exec.scope });
     }
     // Digest: garnish, not load-bearing — a persistent violation skips the
     // row (run goes partial) instead of failing the stage and forcing a

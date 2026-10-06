@@ -84,11 +84,11 @@ function aiFeed(): string {
 }
 
 function categoryFetch(): { fetchImpl: typeof fetch } {
-  const fetchImpl = ((input: RequestInfo | URL): Promise<Response> => {
+  const fetchImpl = (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.includes("feed-ai.xml")) return Promise.resolve(new Response(aiFeed(), { status: 200 }));
     return Promise.resolve(new Response("not found", { status: 404 }));
-  }) as unknown as typeof fetch;
+  };
   return { fetchImpl };
 }
 
@@ -207,7 +207,7 @@ describe("CATRUN-14 same-scope rerun adds about zero raw rows", () => {
       writeSetting(db, "category_sources", aiOverrides());
       const sheets = new FakeSheetsClient();
       const { fetchImpl } = categoryFetch();
-      const first = await orch(db, sheets, fetchImpl).startRun({ trigger: "manual", runDate: DAY, categories: ["ai"] });
+      await orch(db, sheets, fetchImpl).startRun({ trigger: "manual", runDate: DAY, categories: ["ai"] });
       const count1 = (db.prepare("SELECT COUNT(*) AS n FROM items_run").get() as { n: number }).n;
       expect(count1).toBeGreaterThan(0);
       const second = await orch(db, sheets, fetchImpl).startRun({ trigger: "manual", runDate: DAY, categories: ["ai"] });
@@ -224,12 +224,12 @@ describe("CATRUN-14 same-scope rerun adds about zero raw rows", () => {
   });
 });
 
-describe("CATRUN-13 cron default_categories and CATEGORY_NO_SOURCES", () => {
+describe("CATRUN-13 cron my_categories and CATEGORY_NO_SOURCES", () => {
   it("resolveCronCategories reads the settings key", () => {
     const db = openTestDb();
     try {
       expect(resolveCronCategories(db)).toEqual([]);
-      writeSetting(db, "default_categories", ["ai", "finance"]);
+      writeSetting(db, "my_categories", ["ai", "finance"]);
       expect(resolveCronCategories(db)).toEqual(["ai", "finance"]);
     } finally {
       db.close();

@@ -138,6 +138,21 @@ export const CATEGORY_REGISTRY: Record<string, CategoryEntry> = {
   other: { slug: "other", label: "Other", sources: [] },
 };
 
+/**
+ * Validate my_categories: ordered slug list, empty allowed (onboarding),
+ * no duplicates, valid slugs only, at most `max` entries.
+ */
+export function validateMyCategories(raw: unknown, max = 6): string[] {
+  if (!Array.isArray(raw)) throw new Error("expected an array of category slugs");
+  const clean = raw.map((s) => (typeof s === "string" ? s.trim().toLowerCase() : ""));
+  if (clean.some((s) => s === "")) throw new Error("categories must be non-empty strings");
+  const unknown = clean.filter((s) => !(CATEGORY_SLUGS as readonly string[]).includes(s));
+  if (unknown.length > 0) throw new Error(`unknown categories: ${unknown.join(", ")}`);
+  if (new Set(clean).size !== clean.length) throw new Error("duplicate categories");
+  if (clean.length > max) throw new Error(`at most ${String(max)} categories`);
+  return clean;
+}
+
 /** Scope key: "all", or slugs sorted alphabetically joined with "+" (max 5). */
 export function normalizeScope(slugs: string[]): string {
   const clean = [...new Set(slugs.map((s) => s.trim().toLowerCase()).filter((s) => s !== ""))].sort();

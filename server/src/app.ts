@@ -24,6 +24,8 @@ import { registerSetup } from "./api/setup.js";
 import { registerSheets } from "./api/sheets.js";
 import { registerToday } from "./api/today.js";
 import { registerLive } from "./api/live.js";
+import { registerCategories } from "./api/categories.js";
+import { registerMyCategories } from "./api/myCategories.js";
 import { registerSources } from "./api/sources.js";
 import { registerTrends } from "./api/trends.js";
 
@@ -45,6 +47,8 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerSheets(app, ctx);
   registerToday(app, ctx);
   registerLive(app, ctx);
+  registerCategories(app, ctx);
+  registerMyCategories(app, ctx);
   registerRuns(app, ctx);
   registerSetup(app, ctx);
 

@@ -12,9 +12,9 @@ import type { RunTrigger } from "../pipeline/orchestrator.js";
 import { LockBusyError } from "./lock.js";
 import { readSettingsMap } from "../config/settings.js";
 
-/** Cron scope from the default_categories settings key ([] = all). */
+/** Cron categories from the my_categories settings key ([] = none selected). */
 export function resolveCronCategories(db: StateDb): string[] {
-  const raw = readSettingsMap(db).get("default_categories");
+  const raw = readSettingsMap(db).get("my_categories");
   if (!Array.isArray(raw)) return [];
   const clean = raw.filter((s): s is string => typeof s === "string" && s.trim() !== "");
   return [...new Set(clean)];

@@ -9,7 +9,8 @@ import { z } from "zod";
 import { badRequest, notFound } from "./errors.js";
 import type { AppContext } from "./context.js";
 import { appRepo } from "./context.js";
-import { normalizeScope } from "../categories/registry.js";
+import { CATEGORY_REGISTRY, CATEGORY_SLUGS, normalizeScope } from "../categories/registry.js";
+import { effectiveTopPerCategory } from "../config/settings.js";
 import {
   Category,
   Momentum,
@@ -30,7 +31,8 @@ const TrendsQuery = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
     .optional(),
-  category: listOf(Category),
+  /** Jev label (Explore) or lowercase slug (Doc 19); normalized to labels. */
+  category: listOf(z.string()),
   source: listOf(SourceKey),
   momentum: listOf(Momentum),
   min_score: z.coerce.number().int().min(0).max(100).optional(),
@@ -50,13 +52,29 @@ export function parseTrendsQuery(ctx: AppContext, query: unknown): TrendsFilter 
       `Invalid query${issue ? `: ${issue.path.join(".")} ${issue.message}` : ""}`,
     );
   }
+  // Slugs ("ai") and labels ("AI") both accepted; unknown values 400.
+  const labels: string[] = [];
+  for (const raw of result.data.category) {
+    const slug = raw.trim().toLowerCase();
+    const entry = (CATEGORY_SLUGS as readonly string[]).includes(slug) ? CATEGORY_REGISTRY[slug] : undefined;
+    if (entry) {
+      if (!labels.includes(entry.label)) labels.push(entry.label);
+      continue;
+    }
+    if ((Category.options as readonly string[]).includes(raw)) {
+      if (!labels.includes(raw)) labels.push(raw);
+      continue;
+    }
+    throw badRequest(`Invalid query: category unknown category '${raw}'.`);
+  }
   const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.config.tz });
-  return { ...result.data, date: result.data.date ?? today };
+  return { ...result.data, category: labels, date: result.data.date ?? today };
 }
 
 export const TrendsResponse = z.object({
   date: z.string(),
   scope: z.string().default("all"),
+  category: z.string().optional(),
   hint: z.string().optional(),
   items: z.array(SortedTrendRecord),
   total: z.number().int(),
@@ -67,6 +85,7 @@ export const TrendsResponse = z.object({
 export interface TrendsResult {
   date: string;
   scope: string;
+  category?: string;
   hint?: string;
   items: z.infer<typeof SortedTrendRecord>[];
   total: number;
@@ -94,6 +113,36 @@ export async function loadTrends(ctx: AppContext, filter: TrendsFilter): Promise
     idToSource = new Map(raw.rows.map((row) => [row.id, row.source]));
   }
   const q = filter.q?.toLowerCase();
+  // Doc-19 per-category set: non-legacy rows of these labels, rank order,
+  // at most TOP_PER_CATEGORY (post-Q3 persists never exceed it either).
+  if (filter.category.length > 0) {
+    const top = effectiveTopPerCategory(ctx.db, ctx.config);
+    const items = sorted.rows.filter(
+      (topic) =>
+        (topic.scope || "all") === "all" &&
+        filter.category.includes(topic.category) &&
+        (filter.momentum.length === 0 || filter.momentum.includes(topic.momentum)) &&
+        (filter.min_score === undefined || topic.trend_score >= filter.min_score) &&
+        (!q || topic.title.toLowerCase().includes(q) || topic.summary.toLowerCase().includes(q)) &&
+        (!idToSource ||
+          topic.evidence_item_ids.some((id) => {
+            const source = idToSource.get(id);
+            return source !== undefined && filter.source.includes(source);
+          })),
+    );
+    if (filter.sort === "title") items.sort((a, b) => (a.title < b.title ? -1 : a.title > b.title ? 1 : 0));
+    else items.sort((a, b) => a.rank - b.rank);
+    const set = items.slice(0, top);
+    return {
+      date: filter.date,
+      scope,
+      ...(filter.category.length === 1 && filter.category[0] !== undefined ? { category: filter.category[0] } : {}),
+      items: set,
+      total: set.length,
+      warnings,
+      ageS,
+    };
+  }
   const items = sorted.rows.filter(
     (topic) =>
       ((topic.scope || "all") === scope) &&
@@ -149,6 +198,7 @@ export function registerTrends(app: FastifyInstance, ctx: AppContext): void {
     return TrendsResponse.parse({
       date: result.date,
       scope: result.scope,
+      ...(result.category ? { category: result.category } : {}),
       ...(result.hint ? { hint: result.hint } : {}),
       items: result.items,
       total: result.total,

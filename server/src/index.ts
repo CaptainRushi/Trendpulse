@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     timezone: config.tz,
     log: logger,
     onTrigger: (trigger) => {
-      // Cron honors the default_categories settings key (empty = all).
+      // Cron honors the my_categories settings key (empty = none selected).
       const categories = resolveCronCategories(db);
       return orchestrator.startRun({ trigger, ...(categories.length > 0 ? { categories } : {}) });
     },

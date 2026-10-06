@@ -13,7 +13,6 @@ export type RetentionMode = "archive" | "delete";
 export interface EffectiveSettings {
   scoreWeights: ScoreWeights;
   sortBatchSize: number;
-  topN: number;
   dedupeDays: number;
   retentionDays: number;
   retentionMode: RetentionMode;
@@ -43,6 +42,49 @@ export function readSettingsMap(db: StateDb): Map<string, unknown> {
     }
   }
   return map;
+}
+
+/** settings rows, tolerant of a corrupt table (falls back to compiled/env defaults). */
+function lenientSettingsMap(db: StateDb): Map<string, unknown> {
+  try {
+    return readSettingsMap(db);
+  } catch {
+    return new Map();
+  }
+}
+
+/** Ordered my_categories slugs as stored (defensive: strings only, de-duplicated). */
+export function readMyCategories(db: StateDb): string[] {
+  const raw = lenientSettingsMap(db).get("my_categories");
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const slug = entry.trim().toLowerCase();
+    if (slug !== "" && !out.includes(slug)) out.push(slug);
+  }
+  return out;
+}
+
+/** MAX_CATEGORIES: settings row wins when it is a valid int >= 1, else env. */
+export function effectiveMaxCategories(db: StateDb, config: TrendPulseConfig): number {
+  const raw = lenientSettingsMap(db).get("max_categories");
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) return raw;
+  return config.maxCategories;
+}
+
+/** TOP_PER_CATEGORY clamped to 1-10 (Doc 19); settings row wins when valid. */
+export function effectiveTopPerCategory(db: StateDb, config: TrendPulseConfig): number {
+  const raw = lenientSettingsMap(db).get("top_per_category");
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1 && raw <= 10) return raw;
+  return config.topPerCategory;
+}
+
+/** INCLUDE_GENERAL_SOURCES; settings row wins when boolean, else env. */
+export function effectiveIncludeGeneralSources(db: StateDb, config: TrendPulseConfig): boolean {
+  const raw = lenientSettingsMap(db).get("include_general_sources");
+  if (typeof raw === "boolean") return raw;
+  return config.includeGeneralSources;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,7 +146,6 @@ export function resolveEffectiveSettings(db: StateDb, config: TrendPulseConfig):
     settings: {
       scoreWeights: scoreWeightsOr(rawWeights, DEFAULT_SCORE_WEIGHTS),
       sortBatchSize: intOr(map.get("sort_batch_size"), config.sortBatchSize, 1),
-      topN: intOr(map.get("top_n"), config.topN, 1),
       dedupeDays: intOr(map.get("dedupe_days"), config.dedupeDays, 0),
       retentionDays: intOr(map.get("retention_days"), config.retentionDays, 1),
       retentionMode,

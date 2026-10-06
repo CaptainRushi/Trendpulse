@@ -52,28 +52,28 @@ describe("CATRUN-02 scope_key normalization", () => {
   });
 });
 
-function sortedRow(topicId: string, runId: string, scope: string, latest: boolean): string[] {
-  const record = { ...makeSortedTopic({ topic_id: topicId, run_id: runId, is_latest: latest, hidden: false }), scope };
+function sortedRow(topicId: string, runId: string, scope: string, latest: boolean, category: "AI" | "Finance" = "AI"): string[] {
+  const record = { ...makeSortedTopic({ topic_id: topicId, run_id: runId, is_latest: latest, hidden: false, category }), scope };
   return sortedRecordToRow(record);
 }
 
-describe("CATRUN-09 is_latest per (date, scope)", () => {
-  it("markLatest flips only the same scope", async () => {
+describe("CATRUN-09 is_latest per (date, category)", () => {
+  it("markLatest flips only the same category", async () => {
     const fake = new FakeSheetsClient();
     await fake.addTab("sorted_trends");
     await fake.addTab("daily_digest");
     await fake.writeFirstRow("s", "sorted_trends", [...SORTED_TRENDS_HEADERS]);
     await fake.writeFirstRow("s", "daily_digest", ["run_date", "run_id", "x", "x", "x", "x", "x", "x", "x", "x", "is_latest"]);
     await fake.appendRows("s", "sorted_trends", [
-      sortedRow("a1", "run-old", "ai", true),
-      sortedRow("a2", "run-new", "ai", true),
-      sortedRow("b1", "run-old", "all", true),
+      sortedRow("a1", "run-old", "all", true, "AI"),
+      sortedRow("a2", "run-new", "all", true, "AI"),
+      sortedRow("b1", "run-old", "all", true, "Finance"),
     ]);
     const repo = new SheetsRepo(fake, {
       spreadsheetId: "s",
       queue: new SheetsWriteQueue({ sleep: () => Promise.resolve(), now: () => 0 }),
     });
-    const flipped = await repo.markLatest("2026-09-30", "run-new", "ai");
+    const flipped = await repo.markLatest("2026-09-30", "run-new", { category: "AI" });
     expect(flipped.flipped).toBe(1);
     const values = await fake.getAllValues("s", "sorted_trends");
     expect(values[1]?.[23]).toBe("FALSE");
