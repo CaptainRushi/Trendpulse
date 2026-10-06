@@ -61,9 +61,45 @@ const result = writeLatestSet(
   now,
 );
 
+// Category demo set (Doc 17 S6): an ai+finance scope alongside the all-scope
+// set, plus sort events so the animation replays on load.
+const catResult = writeLatestSet(
+  db,
+  "demo-run-1",
+  today,
+  [
+    { topic_id: "demo-ai-1", rank: 1, title: "Demo: AI funding round", trend_score: 88, source_count: 2, hidden: false, evidence_item_ids: ["demo-hn-8863"] },
+  ],
+  config.pulseTopN,
+  now,
+  "ai+finance",
+);
+const demoEvents: Record<string, unknown>[] = [
+  { type: "sort_phase", phase: "classify" },
+  {
+    type: "sort_batch",
+    stage: "classify",
+    items: [
+      { id: "demo-hn-8863", t: "Demo: Dropbox YC launch", c: "ai", q: 0.9, f: false, d: false, o: false },
+      { id: "demo-gh-reach", t: "agent-reach", c: "ai", q: 0.8, f: false, d: false, o: false },
+    ],
+    done: 2,
+    total: 2,
+    jev_calls: 2,
+    fallback_calls: 0,
+    cost_usd: 0.0001,
+  },
+  { type: "sort_phase", phase: "done" },
+];
+const insertEvent = db.prepare("INSERT INTO sort_events (run_id, seq, payload_json) VALUES ('demo-run-1', ?, ?) ON CONFLICT(run_id, seq) DO NOTHING");
+demoEvents.forEach((event, i) => {
+  insertEvent.run(i + 1, JSON.stringify(event));
+});
+
 if (fast) {
   writeSetting(db, "pulse_interval_ms", 10_000);
   process.stdout.write("pulse-fast: sampler interval set to 10 s (settings pulse_interval_ms).\n");
 }
 process.stdout.write(`seeded ${today}: indexed ${String(result.indexed)}, baselines ${String(result.baselined)}.\n`);
+process.stdout.write(`category set: indexed ${String(catResult.indexed)} for scope ai+finance, ${String(demoEvents.length)} replay events.\n`);
 db.close();

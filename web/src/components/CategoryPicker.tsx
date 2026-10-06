@@ -107,7 +107,7 @@ export function CategoryPicker({ selected, mode, onChange, onRun, running }: Pic
             estimate
           </button>
           <button type="button" className="btn btn-primary" disabled={running} onClick={onRun}>
-            {running ? "starting…" : `run for ${scope}`}
+            {running ? "starting…" : `run for ${scope.split("+").join(" + ")}`}
           </button>
         </div>
       ) : null}

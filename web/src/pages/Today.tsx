@@ -442,7 +442,7 @@ function TopPulseSection({
             hint={`run the pipeline for ${scope} and its top topic lands here.`}
             action={
               <button type="button" className="btn btn-primary" disabled={runPending} onClick={onRunScope}>
-                {runPending ? "starting…" : `run for ${scope}`}
+                {runPending ? "starting…" : `run for ${scope.split("+").join(" + ")}`}
               </button>
             }
           />
