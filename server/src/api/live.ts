@@ -10,6 +10,7 @@ import { appEvents } from "./context.js";
 import { streamRunEvents } from "./sse.js";
 import { latestSet } from "../pulse/index.js";
 import { readBaselines } from "../pulse/index.js";
+import { normalizeScope } from "../categories/registry.js";
 import { isPipelineActive } from "../pulse/sampler.js";
 
 const SamplesQuery = z.object({
@@ -18,6 +19,7 @@ const SamplesQuery = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   top: z.coerce.number().int().min(1).max(10).optional(),
+  scope: z.string().optional(),
 });
 
 export function registerLive(app: FastifyInstance, ctx: AppContext): void {
@@ -26,7 +28,15 @@ export function registerLive(app: FastifyInstance, ctx: AppContext): void {
     if (!parsed.success) throw badRequest("Invalid query: date must be YYYY-MM-DD, top 1-10.");
     const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.config.tz });
     const date = parsed.data.date ?? today;
-    const set = latestSet(ctx.db, date).slice(0, parsed.data.top ?? ctx.config.pulseTopN);
+    let scope = "all";
+    if (parsed.data.scope !== undefined && parsed.data.scope !== "") {
+      try {
+        scope = normalizeScope(parsed.data.scope.split("+"));
+      } catch {
+        return { date, scope: parsed.data.scope, baseline_at: null, series: [] };
+      }
+    }
+    const set = latestSet(ctx.db, date, scope).slice(0, parsed.data.top ?? ctx.config.pulseTopN);
     const baselines = readBaselines(ctx.db, date);
     const baselineAt = ctx.db
       .prepare("SELECT MIN(sampled_at) AS at FROM topic_samples WHERE sampled_at >= ? AND sampled_at < ?")
@@ -51,7 +61,7 @@ export function registerLive(app: FastifyInstance, ctx: AppContext): void {
         points,
       };
     });
-    return { date, baseline_at: baselineAt?.at ?? null, series };
+    return { date, scope, baseline_at: baselineAt?.at ?? null, series };
   });
 
   app.get("/api/live/stream", (request, reply) => {

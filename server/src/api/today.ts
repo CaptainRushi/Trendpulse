@@ -3,7 +3,9 @@
  * card, plus runner-ups and the live sampler status block.
  */
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import type { AppContext } from "./context.js";
+import { normalizeScope } from "../categories/registry.js";
 import { appRepo } from "./context.js";
 import { hasSamples, lastSampleAt, latestSet, mostRecentDate, type IndexedTopic } from "../pulse/index.js";
 import type { SortedTrendRecord } from "../sheets/schema.js";
@@ -43,16 +45,34 @@ function summarize(indexed: IndexedTopic, rows: Map<string, SortedTrendRecord>, 
 }
 
 export function registerToday(app: FastifyInstance, ctx: AppContext): void {
-  app.get("/api/today/top", async () => {
+  app.get("/api/today/top", async (request) => {
+    const query = z.object({ scope: z.string().optional() }).safeParse(request.query);
+    let scope = "all";
+    if (query.success && query.data.scope !== undefined && query.data.scope !== "") {
+      try {
+        scope = normalizeScope(query.data.scope.split("+"));
+      } catch {
+        return {
+          date: new Date().toLocaleDateString("en-CA", { timeZone: ctx.config.tz }),
+          scope: query.data.scope,
+          hint: `unknown scope '${query.data.scope}' — no set`,
+          from_previous_day: false,
+          topic: null,
+          runner_ups: [],
+          live: { enabled: ctx.config.pulseEnabled, last_sample_at: null, next_sample_at: null, interval_min: ctx.config.pulseIntervalMin, status: "paused" as const },
+        };
+      }
+    }
     const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.config.tz });
     let date = today;
-    let set = latestSet(ctx.db, today);
+    let set = latestSet(ctx.db, today, scope);
     let fromPreviousDay = false;
     if (set.length === 0) {
-      const prev = mostRecentDate(ctx.db);
+      const prev = mostRecentDate(ctx.db, scope);
       if (prev === null) {
         return {
           date: today,
+          scope,
           from_previous_day: false,
           topic: null,
           runner_ups: [],
@@ -61,7 +81,7 @@ export function registerToday(app: FastifyInstance, ctx: AppContext): void {
       }
       date = prev;
       fromPreviousDay = true;
-      set = latestSet(ctx.db, prev);
+      set = latestSet(ctx.db, prev, scope);
     }
     // Enrichment is best-effort: the index alone still answers selection.
     let rows = new Map<string, SortedTrendRecord>();
@@ -78,6 +98,7 @@ export function registerToday(app: FastifyInstance, ctx: AppContext): void {
     const status = !ctx.config.pulseEnabled ? "paused" : last !== null && Date.now() > staleAfter ? "stale" : "live";
     return {
       date,
+      scope,
       from_previous_day: fromPreviousDay,
       topic: top ? summarize(top, rows, { db: ctx.db, date }) : null,
       runner_ups: rest.slice(0, 4).map((t) => summarize(t, rows, { db: ctx.db, date })),

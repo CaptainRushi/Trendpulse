@@ -183,7 +183,7 @@ describe("PULSE-22 hidden table equals the series data", () => {
 describe("PULSE-23 stream merge without refetch", () => {
   it("mergeSamplePoint appends, dedupes and caps at 300", () => {
     const one: PulseSeries = { topic_id: "t1", title: "T", rank: 1, has_live_metric: true, sources: [], points: [{ t: "t0", index: 100, total: 1 }] };
-    const base = { date: "d", baseline_at: null, series: [one] };
+    const base = { date: "d", scope: "all", baseline_at: null, series: [one] };
     const merged = mergeSamplePoint(base, { topic_id: "t1", t: "t1", index: 110, total: 2 });
     expect(merged?.series[0]?.points).toHaveLength(2);
     const same = mergeSamplePoint(merged, { topic_id: "t1", t: "t1", index: 999, total: 9 });

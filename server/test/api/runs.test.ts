@@ -126,7 +126,7 @@ describe("POST /api/runs", () => {
           llm: { calls: number };
         }>();
         expect(body.run).toMatchObject({ status: "success", items_collected: 1, topics_count: 1 });
-        expect(body.stages).toHaveLength(10);
+        expect(body.stages).toHaveLength(11);
         expect(body.stages.every((s) => s.status === "done")).toBe(true);
         expect(body.source_stats).toHaveLength(1);
         const stat = body.source_stats[0];

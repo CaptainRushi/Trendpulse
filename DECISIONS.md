@@ -463,3 +463,12 @@ Files: server/src/categories/*, orchestrator (collect/select/focus/persist hooks
 Conflicts: none — Doc 17 §4 accepts unwired status (temp test names, no FR/phase/checker). Pulse topic_index gains scope_key (additive). Sheets gets 3 trailing columns (registry + idempotent header upgrade).
 - **Definitions (locked):** 14 Jev categories, lowercase slugs; scope_key all|slugs+-joined (max 5); strict (default) excludes off-scope ≥0.6 (kept raw), loose excludes nothing; is_latest per (date, scope); digest only for all; category run = category sources + today's stored items + cache-first classify; dedupe unchanged; scope-less old rows read as all.
 - **Deviations (pre-declared):** S2b search-provider cut; dev:fake is minimal seed (R0 INF-07) — S6 e2e via mocked API + fake timers per repo pattern; reddit OAuth-only stub; per-category Settings editor cut (registry file + PUT validation only); row sparklines already cut (G4).
+
+## 2026-10-06 — catsort-S7 close-out (Doc 17, ponytail full)
+
+- **Done:** S5 picker/SortingStage/scope wiring (web 45/45); S6 fake-seed category sets + e2e 6/6 + shots; S7 live ai check below.
+- **Gates:** server 496/496 (one run; SEC-04 flaked once under load, green solo — pre-existing timing flake), web 45/45, lint+typecheck clean, shared rebuilt.
+- **Live ai run (read-only probe, real endpoints + real Jev, no sheet/DB writes):** collect 15 items in 12.5s (hn keywords 5, gh topic:llm 5, mit-tech RSS 5, all ok); Jev labeled 6/6 sampled AI (~350ms each, ~fractions of a cent). Dropped at registry build: nature (HTML not RSS), nih (403), mnt/404, who/404, arXiv cs.AI (valid but empty).
+- **Production note:** an all-scope run was mid-sort_write during verification — sort_focus ran (done) on real data; writer slow on local gateway, left undisturbed.
+- **Deviations:** estimate is a planning ceiling (not ±30% prediction); S2b search cut; select folded into collect; sort_focus runs as no-op for all; docs/02,04,10 stage lists absent (only docs/12 history + docs/17); dev:fake is minimal seed (no fake pipeline → no --sort-delay); mocked-API e2e per repo pattern; `other` sourceless by design; shared Day1Routes extended with pulse/live routes; RATE_LIMITED code added.
+- **Still needs the user:** nothing for this feature — try the picker on Today (?scope=ai+finance), watch a run sort live.

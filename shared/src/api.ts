@@ -209,6 +209,8 @@ export type PulseTopicSummary = z.infer<typeof PulseTopicSummary>;
 
 export const PulseTodayTop = z.object({
   date: z.string(),
+  scope: z.string().default("all"),
+  hint: z.string().optional(),
   from_previous_day: z.boolean(),
   topic: PulseTopicSummary.nullable(),
   runner_ups: z.array(PulseTopicSummary),
@@ -237,6 +239,7 @@ export type PulseSeries = z.infer<typeof PulseSeries>;
 
 export const PulseSamples = z.object({
   date: z.string(),
+  scope: z.string().default("all"),
   baseline_at: z.string().nullable(),
   series: z.array(PulseSeries),
 });

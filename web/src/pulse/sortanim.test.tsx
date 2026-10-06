@@ -64,7 +64,7 @@ describe("SORTANIM-05 phase rendering from event fixtures", () => {
       { type: "sort_topics", topics: [{ cluster_id: "c1", title: "AI group" }] },
       { type: "sort_rank", ranks: [{ cluster_id: "c1", rank: 1, score: 92 }] },
     ], "done");
-    const { container } = render(
+    render(
       (() => {
         const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
         return (
