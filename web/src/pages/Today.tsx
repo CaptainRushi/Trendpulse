@@ -10,10 +10,14 @@ import {
   useHealth,
   useRun,
   useRuns,
+  useStartRun,
   useSyncSheets,
   useTopicEvidence,
   useTrends,
 } from "../hooks/useApi";
+import { CategoryPicker } from "../components/CategoryPicker";
+import { SortingStage } from "../components/SortingStage";
+import { useActiveRun } from "../hooks/useLive";
 import { useLiveSeries, useLiveStream, useSampleNow, useTopToday } from "../hooks/useLive";
 import type { PulseTopicSummary } from "../lib/api";
 import { LiveChart } from "../components/LiveChart";
@@ -80,8 +84,11 @@ export function Today(): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const health = useHealth();
+  const scopeParam = params.get("scope") ?? "";
+  const scope = scopeParam === "" ? "all" : scopeParam;
   const trends = useTrends({
     date,
+    scope,
     category: filters.category,
     source: [],
     momentum: [],
@@ -92,6 +99,27 @@ export function Today(): React.JSX.Element {
   });
   const digest = useDigest(date);
   const dates = useDates();
+  const [mode, setMode] = useState<"strict" | "loose">("strict");
+  const startRun = useStartRun();
+  const setScope = (selected: string[], nextMode: "strict" | "loose"): void => {
+    setMode(nextMode);
+    const next = new URLSearchParams(params);
+    if (selected.length === 0) next.delete("scope");
+    else next.set("scope", [...selected].sort().join("+"));
+    setParams(next, { replace: true });
+  };
+  const runScope = (): void => {
+    const selected = scope === "all" ? [] : scope.split("+");
+    if (selected.length === 0) return;
+    startRun.mutate(
+      { categories: selected, mode },
+      {
+        onError: (error) => {
+          toast({ tone: "bad", message: error.message });
+        },
+      },
+    );
+  };
   const runs = useRuns(1, 0);
   const latestRunId = runs.data?.runs[0]?.run_id ?? null;
   const latest = useRun(latestRunId);
@@ -165,7 +193,15 @@ export function Today(): React.JSX.Element {
         ) : null}
       </section>
 
-      <TopPulseSection onOpen={setOpenId} />
+      <CategoryPicker
+        selected={scope === "all" ? [] : scope.split("+")}
+        mode={mode}
+        onChange={setScope}
+        onRun={runScope}
+        running={startRun.isPending}
+      />
+      <TopPulseActiveSort />
+      <TopPulseSection onOpen={setOpenId} scope={scope} onRunScope={runScope} runPending={startRun.isPending} />
 
       {latest.data ? (
         <section aria-label="Latest run stages">
@@ -340,16 +376,26 @@ function fmtClock(iso: string | null): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function TopPulseSection({ onOpen }: { onOpen: (id: string) => void }): React.JSX.Element | null {
-  const top = useTopToday();
+function TopPulseSection({
+  onOpen,
+  scope,
+  onRunScope,
+  runPending,
+}: {
+  onOpen: (id: string) => void;
+  scope: string;
+  onRunScope: () => void;
+  runPending: boolean;
+}): React.JSX.Element | null {
+  const top = useTopToday(scope);
   const [modeOverride, setModeOverride] = useState<"live" | "scores" | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const prevId = useRef<string | null>(null);
   const reducedMotion = useReducedMotion();
   const now = useNowMs();
   const toast = useToast();
-  const series = useLiveSeries(top.data?.date ?? null);
-  const stream = useLiveStream(top.data?.date ?? null);
+  const series = useLiveSeries(top.data?.date ?? null, scope);
+  const stream = useLiveStream(top.data?.date ?? null, scope);
   const sampleNow = useSampleNow();
 
   const payload = top.data;
@@ -388,6 +434,21 @@ function TopPulseSection({ onOpen }: { onOpen: (id: string) => void }): React.JS
     );
   }
   if (!topic) {
+    if (scope !== "all") {
+      return (
+        <section aria-label="Top topic today">
+          <EmptyNudge
+            title="no set for this scope yet"
+            hint={`run the pipeline for ${scope} and its top topic lands here.`}
+            action={
+              <button type="button" className="btn btn-primary" disabled={runPending} onClick={onRunScope}>
+                {runPending ? "starting…" : `run for ${scope}`}
+              </button>
+            }
+          />
+        </section>
+      );
+    }
     return (
       <section aria-label="Top topic today">
         <EmptyNudge
@@ -495,6 +556,12 @@ function TopPulseSection({ onOpen }: { onOpen: (id: string) => void }): React.JS
       <div className="visually-hidden" aria-live="polite">{announcement}</div>
     </section>
   );
+}
+
+function TopPulseActiveSort(): React.JSX.Element | null {
+  const active = useActiveRun();
+  if (!active.data?.run_id) return null;
+  return <SortingStage runId={active.data.run_id} />;
 }
 
 function prevDay(date: string): string {

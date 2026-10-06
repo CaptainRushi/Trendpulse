@@ -44,7 +44,7 @@ export function useRunEvents(runId: string | null): EventSourceState {
       // Custom event types arrive via listeners, not onmessage. The event
       // name is the type — data carries no `type` field (server sends
       // {run_id, ...payload}), so close on the listener name, not the data.
-      for (const type of ["stage", "source", "progress", "log", "done", "error"]) {
+      for (const type of ["stage", "source", "progress", "log", "done", "error", "sort_batch", "sort_clusters", "sort_topics", "sort_rank", "sort_phase"]) {
         source.addEventListener(type, ((event: Event) => {
           const message = event as MessageEvent<string>;
           try {

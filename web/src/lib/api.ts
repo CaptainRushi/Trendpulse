@@ -24,6 +24,8 @@ export interface PulseTopicSummary {
 
 export interface PulseTodayTop {
   date: string;
+  scope: string;
+  hint?: string;
   from_previous_day: boolean;
   topic: PulseTopicSummary | null;
   runner_ups: PulseTopicSummary[];
@@ -53,6 +55,7 @@ export interface PulseSeries {
 
 export interface PulseSamples {
   date: string;
+  scope: string;
   baseline_at: string | null;
   series: PulseSeries[];
 }

@@ -7,8 +7,9 @@ import { formatDateTime, formatDurationMs } from "../lib/format.js";
 import { useToast } from "../components/Toast.js";
 import { EmptyState, ErrorState, SkeletonGrid } from "../components/States.js";
 import { FlowStrip, Pill } from "../components/decode.js";
+import { SortingStage } from "../components/SortingStage.js";
 
-const STAGE_ORDER = ["collect", "normalize", "dedupe", "persist_raw", "sort_classify", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"];
+const STAGE_ORDER = ["collect", "normalize", "dedupe", "persist_raw", "sort_classify", "sort_focus", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"];
 
 /**
  * Runs (§5.6): history list + detail (stage stepper, per-source table,
@@ -169,6 +170,11 @@ function RunDetailView({ runId }: { runId: string }): React.JSX.Element {
           }))}
         />
       </section>
+      {run.status === "running" ? (
+        <section className="panel" aria-label="Sorting animation">
+          <SortingStage runId={run.run_id} compact />
+        </section>
+      ) : null}
       <section className="table-wrap" aria-label="Per-source results">
         <table className="data-table">
           <thead>

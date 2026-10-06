@@ -1153,3 +1153,79 @@ textarea.input {
     border-color: var(--lime);
   }
 }
+
+/* sorting animation: bins, dots, cards (transform/opacity only) */
+.sort-bins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sort-bin {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  min-width: 120px;
+  cursor: pointer;
+}
+
+.sort-bin:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+
+.sort-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 6px;
+  max-width: 180px;
+}
+
+.sort-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0;
+  animation: sort-dot-in 300ms ease-out forwards;
+}
+
+.sort-dot[data-cat="ai"] { background: var(--violet); }
+.sort-dot[data-cat="tech"] { background: var(--info); }
+.sort-dot[data-cat="finance"], .sort-dot[data-cat="business"] { background: var(--warn); }
+.sort-dot[data-cat="other"] { background: var(--faint); }
+
+@keyframes sort-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.sort-cards {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sort-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  background: var(--panel);
+  will-change: transform;
+}
+
+.sort-card[data-top] {
+  background: var(--lime-bg);
+  border-color: var(--lime-deep);
+}

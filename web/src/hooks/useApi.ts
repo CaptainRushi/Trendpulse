@@ -21,6 +21,7 @@ export function useHealth(): ReturnType<typeof useQuery<Health>> {
 
 export interface TrendFilters {
   date: string;
+  scope?: string;
   category: string[];
   source: string[];
   momentum: string[];
@@ -33,6 +34,7 @@ export interface TrendFilters {
 
 function trendParams(filters: TrendFilters): string {
   const params = new URLSearchParams({ date: filters.date, sort: filters.sort });
+  if (filters.scope && filters.scope !== "all") params.set("scope", filters.scope);
   for (const c of filters.category) params.append("category", c);
   for (const s of filters.source) params.append("source", s);
   for (const m of filters.momentum) params.append("momentum", m);

@@ -9,21 +9,52 @@ import type { PulseSamples, PulseSeries, PulseTodayTop } from "../lib/api";
 
 const STALE_MS = 30_000;
 
-export function useTopToday(): ReturnType<typeof useQuery<PulseTodayTop>> {
+export function useTopToday(scope: string): ReturnType<typeof useQuery<PulseTodayTop>> {
   return useQuery({
-    queryKey: ["pulse-top"],
-    queryFn: () => api.get<PulseTodayTop>("/api/today/top"),
+    queryKey: ["pulse-top", scope],
+    queryFn: () => api.get<PulseTodayTop>(`/api/today/top?scope=${encodeURIComponent(scope)}`),
     staleTime: STALE_MS,
     retry: false,
   });
 }
 
-export function useLiveSeries(date: string | null): ReturnType<typeof useQuery<PulseSamples>> {
+export function useLiveSeries(date: string | null, scope: string): ReturnType<typeof useQuery<PulseSamples>> {
   return useQuery({
-    queryKey: ["live-series", date],
-    queryFn: () => api.get<PulseSamples>(`/api/live/samples?date=${date ?? ""}`),
+    queryKey: ["live-series", date, scope],
+    queryFn: () => api.get<PulseSamples>(`/api/live/samples?date=${date ?? ""}&scope=${encodeURIComponent(scope)}`),
     enabled: date !== null,
     staleTime: STALE_MS,
+    retry: false,
+  });
+}
+
+export interface RunEstimate {
+  scope: string;
+  mode: string;
+  sources: { collector: string; categories: string[] }[];
+  expected_new_items: number;
+  stored_items_reused: number;
+  jev_calls_expected: number;
+  cost_usd_estimate: number;
+  warnings: string[];
+}
+
+export function useEstimate(categories: string[], mode: string): ReturnType<typeof useQuery<RunEstimate>> {
+  const key = [...categories].sort().join("+");
+  return useQuery({
+    queryKey: ["estimate", key, mode],
+    queryFn: () => api.post<RunEstimate>("/api/runs/estimate", { categories, mode }),
+    enabled: categories.length > 0,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useActiveRun(): ReturnType<typeof useQuery<{ run_id: string | null; scope: string }>> {
+  return useQuery({
+    queryKey: ["active-run"],
+    queryFn: () => api.get<{ run_id: string | null; scope: string }>("/api/runs/active"),
+    refetchInterval: 10_000,
     retry: false,
   });
 }
@@ -57,7 +88,7 @@ interface StreamEvent {
 const MAX_BACKOFF_MS = 30_000;
 const POLL_MS = 30_000;
 
-export function useLiveStream(date: string | null): { status: StreamStatus } {
+export function useLiveStream(date: string | null, scope: string): { status: StreamStatus } {
   const client = useQueryClient();
   const [status, setStatus] = useState<StreamStatus>("idle");
   const statusRef = useRef(status);
@@ -75,7 +106,7 @@ export function useLiveStream(date: string | null): { status: StreamStatus } {
     const apply = (type: string, data: StreamEvent): void => {
       if (type === "sample" && data.topic_id && data.t !== undefined && data.index !== undefined && data.total !== undefined) {
         const point = { topic_id: data.topic_id, t: data.t, index: data.index, total: data.total };
-        client.setQueryData<PulseSamples | undefined>(["live-series", date], (old) => mergeSamplePoint(old, point));
+        client.setQueryData<PulseSamples | undefined>(["live-series", date, scope], (old) => mergeSamplePoint(old, point));
       } else if (type === "top_changed") {
         void client.invalidateQueries({ queryKey: ["pulse-top"] });
         void client.invalidateQueries({ queryKey: ["live-series", date] });
@@ -87,7 +118,7 @@ export function useLiveStream(date: string | null): { status: StreamStatus } {
       setStatus("polling");
       pollTimer = setInterval(() => {
         if (document.hidden) return;
-        void client.invalidateQueries({ queryKey: ["live-series", date] });
+        void client.invalidateQueries({ queryKey: ["live-series", date, scope] });
       }, POLL_MS);
     };
 
@@ -155,7 +186,7 @@ export function useLiveStream(date: string | null): { status: StreamStatus } {
           clearInterval(pollTimer);
           pollTimer = null;
         }
-        void client.invalidateQueries({ queryKey: ["live-series", date] });
+        void client.invalidateQueries({ queryKey: ["live-series", date, scope] });
         connect();
       }
     };
@@ -168,7 +199,7 @@ export function useLiveStream(date: string | null): { status: StreamStatus } {
       if (pollTimer !== null) clearInterval(pollTimer);
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
     };
-  }, [date, client]);
+  }, [date, scope, client]);
 
   return { status };
 }
