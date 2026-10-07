@@ -114,8 +114,8 @@ export function prepareRunItems(db: StateDb, options: PrepareOptions): PrepareRe
   const items = scored.map((item) => toRecord(item, options.runId, collectedAt));
 
   const insert = db.prepare(
-    `INSERT INTO items_run (id, run_id, run_date, source, content_hash, payload_json, persisted, sort_status)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 'pending')`,
+    `INSERT INTO items_run (id, run_id, run_date, source, content_hash, payload_json, persisted, sort_status, target_category)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 'pending', ?)`,
   );
   const write = db.transaction(() => {
     for (const item of items) {
@@ -129,6 +129,7 @@ export function prepareRunItems(db: StateDb, options: PrepareOptions): PrepareRe
         item.source,
         item.content_hash,
         JSON.stringify(payload),
+        "target_category" in item && typeof item.target_category === "string" ? item.target_category : null,
       );
     }
   });

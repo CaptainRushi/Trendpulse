@@ -11,6 +11,7 @@ import { PipelineScheduler } from "../../src/scheduler/cron.js";
 import { RawTrendRecord } from "../../src/sheets/schema.js";
 import { makeRawItem } from "../sorting/helpers.js";
 import { insertRun } from "../pipeline/helpers.js";
+import { writeSetting } from "../../src/config/settings.js";
 import { FakeJevServer } from "../fakes/fakeJevServer.js";
 import { makeSortedTopic, testContext } from "./helpers.js";
 import type { TestApi } from "./helpers.js";
@@ -345,6 +346,9 @@ describe("STEP 8 API contract", () => {
 
         acquirePipelineLock(t.db, "run-holder");
         try {
+          // An empty body defaults to my_categories so the request reaches
+          // the lock (rather than the NO_CATEGORIES preflight).
+          writeSetting(t.db, "my_categories", ["ai"]);
           const busy = await app.inject({ method: "POST", url: "/api/runs", payload: {} });
           expect(busy.statusCode).toBe(409);
           expect(busy.json<{ error: { code: string } }>().error.code).toBe("RUN_LOCKED");

@@ -487,3 +487,11 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Reason:** a partial unique index broke PULSE-15 and the multi-topic data model (proven by failing suite); code flips already own this for scopes.
 - **Cost if wrong:** duplicate latest rows per category if a flip path is missed; TOP5-16 covers subset-refresh isolation.
 - **Collateral fixes (own scope):** removed stale top_n/topN/default_categories refs (config, effective settings, sorter, cron, setup prompt, .env.example); repaired 3 pre-existing lint errors blocking gates (sortEvents assertion, catrun-s3 unused var + redundant assert, web sortanim unused container).
+
+## 2026-10-07 — top5-Q2 category-only collection (Doc 19, ponytail full)
+
+- **Ruling:** explicit general sources stay a general run (power-user/stage backdoor). NO_CATEGORIES_SELECTED fires only when a run has neither categories nor explicit sources, so Today/cron runs block on empty selection while RUN/orchestrator stage tests and manual source runs keep working.
+- **Reason:** Doc 19 kills default general runs, not explicit source selection; rewriting ~20 stage tests for a model Q3 reshapes again would be churn.
+- **Cost if wrong:** a caller passing sources bypasses the category gate; Today/cron never pass sources.
+- **Ruling:** resortRun (no production callers) gains a categories passthrough; its test pins the legacy general re-sort via explicit sources.
+- **Deviations:** persist now writes the items_run.target_category column (was payload-only); category failed rows carry the first source error; estimate keeps CATRUN-12 ceiling fields and adds per-category/writer/general blocks.

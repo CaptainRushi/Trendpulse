@@ -13,8 +13,16 @@ import { appEvents, appLogger, appOrchestrator } from "./context.js";
 import { streamRunEvents } from "./sse.js";
 import { SourceKey } from "../sheets/schema.js";
 import { estimateRun } from "../categories/estimate.js";
-import { normalizeScope } from "../categories/registry.js";
+import { CATEGORY_SLUGS, validateMyCategories } from "../categories/registry.js";
 import { categoryOverrides } from "../categories/collect.js";
+import { QUESTION_SET_VERSION } from "../sorting/questions.js";
+import {
+  effectiveIncludeGeneralSources,
+  effectiveMaxCategories,
+  effectiveSortBatchSize,
+  effectiveTopPerCategory,
+  readMyCategories,
+} from "../config/settings.js";
 import { replaySortEvents } from "../pipeline/sortEvents.js";
 
 const RunRow = z.object({
@@ -45,7 +53,7 @@ const PostRunsBody = z
       .optional(),
     sources: z.array(SourceKey).optional(),
     limit: z.number().int().min(1).optional(),
-    categories: z.array(z.string()).max(5).optional(),
+    categories: z.array(z.string()).max(CATEGORY_SLUGS.length).optional(),
     mode: z.enum(["strict", "loose"]).optional(),
   })
   .strict();
@@ -93,21 +101,28 @@ function toRunRow(row: RunRowShape): z.infer<typeof RunRow> {
 }
 
 const EstimateBody = z.object({
-  categories: z.array(z.string()).max(5).optional(),
+  categories: z.array(z.string()).max(CATEGORY_SLUGS.length).optional(),
   mode: z.enum(["strict", "loose"]).optional(),
 });
 
 export function registerRuns(app: FastifyInstance, ctx: AppContext): void {
   app.post("/api/runs/estimate", (request) => {
     const parsed = EstimateBody.safeParse(request.body ?? {});
-    if (!parsed.success) throw badRequest("Body must be { categories?: string[≤5], mode?: strict|loose }.");
-    const categories = parsed.data.categories ?? [];
+    if (!parsed.success) throw badRequest("Body must be { categories?: string[], mode?: strict|loose }.");
+    const requested = parsed.data.categories !== undefined && parsed.data.categories.length > 0
+      ? parsed.data.categories
+      : readMyCategories(ctx.db);
+    if (requested.length === 0) {
+      throw badRequest("NO_CATEGORIES_SELECTED: pick at least one category before estimating.");
+    }
+    let categories: string[];
     try {
-      normalizeScope(categories);
+      categories = validateMyCategories(requested, effectiveMaxCategories(ctx.db, ctx.config));
     } catch (error) {
       throw badRequest(error instanceof Error ? error.message : "invalid categories");
     }
     const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.config.tz });
+    const includeGeneral = effectiveIncludeGeneralSources(ctx.db, ctx.config);
     return estimateRun(
       ctx.db,
       {
@@ -115,6 +130,11 @@ export function registerRuns(app: FastifyInstance, ctx: AppContext): void {
         mode: parsed.data.mode ?? "strict",
         overrides: categoryOverrides(ctx.db),
         redditCreds: ctx.config.redditClientId !== "" && ctx.config.redditClientSecret !== "",
+        jevModel: ctx.config.jevModel,
+        questionVersion: QUESTION_SET_VERSION,
+        topPerCategory: effectiveTopPerCategory(ctx.db, ctx.config),
+        batchSize: effectiveSortBatchSize(ctx.db, ctx.config),
+        includeGeneralSources: includeGeneral,
       },
       today,
       ctx.config.jevPricePerMInput,

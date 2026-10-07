@@ -421,7 +421,8 @@ describe("resortRun", () => {
       const first = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
       expect(first.status).toBe("success");
 
-      const resorted = await orch.resortRun(DAY);
+      // Legacy general re-sort: explicit sources keep the backdoor path.
+      const resorted = await orch.resortRun(DAY, { sources: ["hackernews"] });
       expect(resorted.status).toBe("success");
       expect(resorted.topicsCount).toBe(first.topicsCount);
       // Re-sort reuses the date's item rows (same ULIDs) — one url map serves both.

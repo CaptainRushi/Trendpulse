@@ -91,7 +91,7 @@ describe("CATRUN-12 estimate is a sound ceiling and caps hold", () => {
     applyMigrations(db);
     try {
       db.prepare("INSERT INTO runs (id, run_date, trigger, status, stages_requested, started_at) VALUES ('run_1','2026-10-04','manual','success','[]','2026-10-04T06:00:00.000Z')").run();
-      db.prepare("INSERT INTO items_run (id, run_id, run_date, source, content_hash, payload_json) VALUES ('old','run_1','2026-10-04','hackernews','h','{}')").run();
+      db.prepare("INSERT INTO items_run (id, run_id, run_date, source, content_hash, payload_json, target_category) VALUES ('old','run_1','2026-10-04','hackernews','h','{}','ai')").run();
       const { fetchImpl } = fakeFetch([
         { match: "hn.algolia.com", body: fixture("catrun/algolia_llm.json") },
         { match: "api.github.com", body: fixture("catrun/github_topic_llm.json") },

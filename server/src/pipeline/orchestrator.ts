@@ -33,8 +33,13 @@ import { resolveEffectiveSettings } from "../config/settings.js";
 import type { EffectiveSettings } from "../config/settings.js";
 import { pipelineBus } from "./events.js";
 import type { EventBus } from "./events.js";
-import { normalizeScope, effectiveSources } from "../categories/registry.js";
+import { effectiveSources, validateMyCategories } from "../categories/registry.js";
 import { CATEGORY_MAX_ITEMS, categoryOverrides, collectCategory } from "../categories/collect.js";
+import {
+  effectiveIncludeGeneralSources,
+  effectiveMaxCategories,
+  readMyCategories,
+} from "../config/settings.js";
 import { chunkBatch, cutTitle, emitSortEvent } from "./sortEvents.js";
 import type { SortPhase } from "./sortEvents.js";
 import type { StateDb } from "../db/sqlite.js";
@@ -279,14 +284,29 @@ export class Orchestrator {
     }
     const runId = options.runId ?? ulid();
     const runDate = options.runDate ?? new Date().toLocaleDateString("en-CA", { timeZone: this.config.tz });
-    // Scope first: validation failures must precede the lock + run row.
-    let scope = "all";
-    try {
-      scope = normalizeScope(options.categories ?? []);
-    } catch (error) {
-      throw new RunRequestError(error instanceof Error ? error.message : "invalid categories");
+    // Doc 19: runs are category-driven. Explicit categories win; explicit
+    // general sources (no categories) stay a general run for manual/stage
+    // use; otherwise the run covers my_categories, and an empty selection
+    // blocks before the lock + run row.
+    const explicitCats = options.categories !== undefined && options.categories.length > 0;
+    let categories: string[];
+    if (explicitCats) {
+      try {
+        categories = validateMyCategories(options.categories, effectiveMaxCategories(this.db, this.config));
+      } catch (error) {
+        throw new RunRequestError(error instanceof Error ? error.message : "invalid categories");
+      }
+    } else if (options.sources !== undefined) {
+      categories = [];
+    } else {
+      categories = readMyCategories(this.db);
+      if (categories.length === 0) {
+        throw new RunRequestError("NO_CATEGORIES_SELECTED: pick at least one category before running");
+      }
     }
-    const categories = scope === "all" ? [] : scope.split("+");
+    // Scope is Doc-17 compat (scope_key + downstream stages) until Q3
+    // removes it; categories carry the order my_categories defines.
+    const scope = categories.length === 0 ? "all" : [...categories].sort().join("+");
     const focusMode = options.mode ?? "strict";
     // Before the lock + run row: failures here leave nothing behind.
     if (scope !== "all" && !this.hasUsableCategorySources(categories)) {
@@ -423,9 +443,14 @@ export class Orchestrator {
   /**
    * Re-sort-only: a fresh run over a date's persisted items (no collect,
    * no prepare — the working set already exists). Appends a new latest set
-   * and flips the old one via markLatest.
+   * and flips the old one via markLatest. Categories pass through to
+   * startRun (default: my_categories); explicit sources keep the legacy
+   * general re-sort path.
    */
-  async resortRun(runDate: string, options: { sources?: SourceKey[] } = {}): Promise<RunSummary> {
+  async resortRun(
+    runDate: string,
+    options: { sources?: SourceKey[]; categories?: string[] } = {},
+  ): Promise<RunSummary> {
     const items = readRunItemsByDate(this.db, runDate);
     if (items.length === 0) throw new RunRequestError(`no persisted items for date ${runDate} — nothing to re-sort`);
     const summary = await this.startRun({
@@ -433,6 +458,7 @@ export class Orchestrator {
       runDate,
       stages: [...SORT_STAGES],
       ...(options.sources ? { sources: options.sources } : {}),
+      ...(options.categories ? { categories: options.categories } : {}),
     });
     return summary;
   }
@@ -549,10 +575,12 @@ export class Orchestrator {
   }
 
   /**
-   * Category collect (Doc 17 S3): only the scope's registry sources run
-   * (general sources are never called); today's stored items are assembled
-   * alongside so stored labels get reused. Drafts carry target_category
-   * through normalize into items_run.
+   * Category collect (Doc 19 Q2): only the run's registry sources run.
+   * General sources join only with INCLUDE_GENERAL_SOURCES (stamped with a
+   * null target). Each category is isolated: its failure is recorded in
+   * category_runs and as a run warning, never stopping the others.
+   * Today's stored items are assembled alongside so stored labels get
+   * reused. Drafts carry target_category through normalize into items_run.
    */
   private async stageCollectCategory(exec: Execution): Promise<void> {
     const base = this.collectContext(exec.runId, exec.limitOverride);
@@ -563,18 +591,77 @@ export class Orchestrator {
       this.config.redditClientId !== "" && this.config.redditClientSecret !== ""
         ? { reddit_client_id: this.config.redditClientId, reddit_client_secret: this.config.redditClientSecret }
         : {};
+    const hasRedditCreds =
+      "reddit_client_id" in redditCreds ||
+      ((process.env["REDDIT_CLIENT_ID"] ?? "") !== "" && (process.env["REDDIT_CLIENT_SECRET"] ?? "") !== "");
+    const markCategory = this.db.prepare(
+      `INSERT INTO category_runs (run_id, category, status, items_collected, items_kept, topics, started_at, finished_at, error)
+       VALUES (?, ?, 'running', 0, 0, 0, ?, NULL, NULL)
+       ON CONFLICT(run_id, category) DO UPDATE SET status = 'running', started_at = excluded.started_at, finished_at = NULL, error = NULL`,
+    );
+    const finishCategory = this.db.prepare(
+      "UPDATE category_runs SET status = ?, items_collected = ?, finished_at = ?, error = ? WHERE run_id = ? AND category = ?",
+    );
     for (const slug of exec.categories) {
+      const startedAt = new Date().toISOString();
+      markCategory.run(exec.runId, slug, startedAt);
       const sources = effectiveSources(slug, overrides);
-      const out = await collectCategory({ ...base, limit: CATEGORY_MAX_ITEMS }, slug, sources, CATEGORY_MAX_ITEMS, redditCreds);
-      drafts.push(...out.items);
-      stats.push(...out.stats);
-      for (const stat of out.stats) {
-        this.events.emit(exec.runId, "source", {
-          source: `${stat.source}:${slug}`,
-          status: stat.status,
-          items: stat.items,
-          duration_ms: stat.duration_ms,
-        });
+      const usable = sources.filter((source) => source.collector !== "reddit" || hasRedditCreds);
+      if (usable.length === 0) {
+        const reason = `CATEGORY_NO_SOURCES: category '${slug}' has no usable source (reddit needs OAuth)`;
+        finishCategory.run("no_sources", 0, new Date().toISOString(), reason, exec.runId, slug);
+        exec.partialReasons.push(reason);
+        continue;
+      }
+      try {
+        const out = await collectCategory({ ...base, limit: CATEGORY_MAX_ITEMS }, slug, sources, CATEGORY_MAX_ITEMS, redditCreds);
+        drafts.push(...out.items);
+        stats.push(...out.stats);
+        for (const stat of out.stats) {
+          this.events.emit(exec.runId, "source", {
+            source: `${stat.source}:${slug}`,
+            status: stat.status,
+            items: stat.items,
+            duration_ms: stat.duration_ms,
+          });
+        }
+        const failed = out.stats.some((stat) => stat.status === "error" || stat.status === "blocked");
+        if (out.items.length === 0 && failed) {
+          const errs = out.stats
+            .filter((stat) => stat.status === "error" || stat.status === "blocked")
+            .map((stat) => `${stat.source}: ${stat.error ?? stat.status}`);
+          const reason = `category '${slug}': ${errs.join("; ")}`;
+          finishCategory.run("failed", 0, new Date().toISOString(), reason, exec.runId, slug);
+          exec.partialReasons.push(reason);
+        } else {
+          finishCategory.run("ok", out.items.length, new Date().toISOString(), null, exec.runId, slug);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        finishCategory.run("failed", 0, new Date().toISOString(), message, exec.runId, slug);
+        exec.partialReasons.push(`category '${slug}': ${message}`);
+      }
+    }
+    if (effectiveIncludeGeneralSources(this.db, this.config)) {
+      try {
+        const { limits, configs } = this.sourceLimitsConfigs(exec.sources, exec.limitOverride);
+        const ctx = this.collectContext(exec.runId, exec.limitOverride);
+        const out = await runCollectors(ctx, { keys: exec.sources, limits, configs });
+        for (const item of out.items) drafts.push({ ...item, target_category: null });
+        stats.push(...out.stats);
+        for (const stat of out.stats) {
+          this.events.emit(exec.runId, "source", {
+            source: stat.source,
+            status: stat.status,
+            items: stat.items,
+            duration_ms: stat.duration_ms,
+          });
+          if (stat.status === "error" || stat.status === "blocked") {
+            exec.partialReasons.push(`source ${stat.source}: ${stat.error ?? "unknown error"}`);
+          }
+        }
+      } catch (error) {
+        exec.partialReasons.push(`general sources: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     // Assemble: today's stored items join the working set; prepareRunItems

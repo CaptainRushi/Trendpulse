@@ -132,7 +132,11 @@ async function main(): Promise<void> {
     onTrigger: (trigger) => {
       // Cron honors the my_categories settings key (empty = none selected).
       const categories = resolveCronCategories(db);
-      return orchestrator.startRun({ trigger, ...(categories.length > 0 ? { categories } : {}) });
+      if (categories.length === 0) {
+        logger.info("skipping scheduled run (NO_CATEGORIES_SELECTED — pick categories first)");
+        return Promise.resolve(null);
+      }
+      return orchestrator.startRun({ trigger, categories });
     },
   });
   scheduler.start();
@@ -151,13 +155,18 @@ async function main(): Promise<void> {
     }
   }
   if (config.runMissedOnStart && missedToday && recovered.interruptedRuns.length === 0) {
-    logger.info("no successful run today — starting catch-up run");
-    void orchestrator.startRun({ trigger: "catchup" }).catch((error: unknown) => {
-      logger.error(
-        { err: error instanceof Error ? error.message : String(error) },
-        "catch-up run failed",
-      );
-    });
+    const catchupCategories = resolveCronCategories(db);
+    if (catchupCategories.length === 0) {
+      logger.info("skipping catch-up run (NO_CATEGORIES_SELECTED — pick categories first)");
+    } else {
+      logger.info("no successful run today — starting catch-up run");
+      void orchestrator.startRun({ trigger: "catchup", categories: catchupCategories }).catch((error: unknown) => {
+        logger.error(
+          { err: error instanceof Error ? error.message : String(error) },
+          "catch-up run failed",
+        );
+      });
+    }
   }
 
   const app = await buildApp({

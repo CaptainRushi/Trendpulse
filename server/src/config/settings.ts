@@ -80,6 +80,13 @@ export function effectiveTopPerCategory(db: StateDb, config: TrendPulseConfig): 
   return config.topPerCategory;
 }
 
+/** Sort batch size; settings row wins when a valid int >= 1, else env. */
+export function effectiveSortBatchSize(db: StateDb, config: TrendPulseConfig): number {
+  const raw = lenientSettingsMap(db).get("sort_batch_size");
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) return raw;
+  return config.sortBatchSize;
+}
+
 /** INCLUDE_GENERAL_SOURCES; settings row wins when boolean, else env. */
 export function effectiveIncludeGeneralSources(db: StateDb, config: TrendPulseConfig): boolean {
   const raw = lenientSettingsMap(db).get("include_general_sources");
