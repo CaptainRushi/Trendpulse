@@ -110,8 +110,8 @@ describe("STEP 7 orchestrator", () => {
       const summary = await orch.startRun({ trigger: "manual", runDate: DAY, sources: ["hackernews"] });
       expect(summary.status).toBe("success");
       expect([...STAGES]).toEqual([
-        "collect", "normalize", "dedupe", "persist_raw", "sort_classify",
-        "sort_focus", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize",
+        "collect", "normalize", "dedupe", "select", "sort_classify",
+        "sort_assign", "sort_cluster", "score", "sort_write", "persist_sorted", "finalize",
       ]);
       const rows = db
         .prepare("SELECT stage FROM run_stages WHERE run_id = ? ORDER BY rowid")
@@ -196,7 +196,7 @@ describe("STEP 7 orchestrator", () => {
     }
   });
 
-  it("RUN-04 Sheets 403 fails the run at persist_raw", async () => {
+  it("RUN-04 Sheets 403 fails the run at select", async () => {
     const db = openTestDb();
     try {
       const sheets = new FakeSheetsClient();
@@ -212,7 +212,7 @@ describe("STEP 7 orchestrator", () => {
         status: string;
       };
       expect(row.status).toBe("failed");
-      expect(stageStatuses(db, row.id)["persist_raw"]).toBe("failed");
+      expect(stageStatuses(db, row.id)["select"]).toBe("failed");
     } finally {
       db.close();
     }

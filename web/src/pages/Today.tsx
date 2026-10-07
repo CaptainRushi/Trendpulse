@@ -58,7 +58,7 @@ function groupedFlow(stages: { stage: string; status: string }[]): {
   };
   return [
     { key: "pull", label: "pull", status: rank(["collect"]) },
-    { key: "clean", label: "clean", status: rank(["normalize", "dedupe", "persist_raw"]) },
+    { key: "clean", label: "clean", status: rank(["normalize", "dedupe", "select"]) },
     { key: "jev", label: "jev sorts", status: rank(["sort_classify", "sort_cluster"]), jev: true },
     { key: "write", label: "write", status: rank(["sort_write"]) },
     { key: "rank", label: "rank", status: rank(["score", "persist_sorted", "finalize"]) },

@@ -61,18 +61,17 @@ const result = writeLatestSet(
   now,
 );
 
-// Category demo set (Doc 17 S6): an ai+finance scope alongside the all-scope
+// Category demo set (Doc 19: per-category sets): an ai set next to the demo
 // set, plus sort events so the animation replays on load.
 const catResult = writeLatestSet(
   db,
   "demo-run-1",
   today,
   [
-    { topic_id: "demo-ai-1", rank: 1, title: "Demo: AI funding round", trend_score: 88, source_count: 2, hidden: false, evidence_item_ids: ["demo-hn-8863"] },
+    { topic_id: "demo-ai-1", rank: 1, title: "Demo: AI funding round", trend_score: 88, source_count: 2, hidden: false, evidence_item_ids: ["demo-hn-8863"], category: "AI" },
   ],
   config.pulseTopN,
   now,
-  "ai+finance",
 );
 const demoEvents: Record<string, unknown>[] = [
   { type: "sort_phase", phase: "classify" },

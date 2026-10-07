@@ -118,8 +118,8 @@ function classifyDetail(db: StateDb, runId: string): { classified: number; cache
   return { classified: detail.classified, cached: detail.cached };
 }
 
-describe("CATRUN-08 strict versus loose", () => {
-  it("strict excludes off-scope labels; loose keeps everything", async () => {
+describe("CATRUN-08 assign excludes off-category labels in every mode", () => {
+  it("strict and loose both exclude; the rule no longer depends on mode", async () => {
     for (const mode of ["strict", "loose"] as const) {
       const db = openTestDb();
       try {
@@ -133,15 +133,14 @@ describe("CATRUN-08 strict versus loose", () => {
         expect(rows.length).toBeGreaterThan(0);
         const topics = db.prepare("SELECT topic_id FROM topic_index").all() as { topic_id: string }[];
         expect(topics.length).toBeGreaterThan(0);
-        const focus = db.prepare("SELECT detail_json FROM run_stages WHERE run_id = ? AND stage = 'sort_focus'").get(summary.runId) as {
+        const assign = db.prepare("SELECT detail_json FROM run_stages WHERE run_id = ? AND stage = 'sort_assign'").get(summary.runId) as {
           detail_json: string;
         };
-        const excluded = (JSON.parse(focus.detail_json) as { excluded: { itemId: string }[] }).excluded;
-        if (mode === "strict") {
-          expect(excluded.length).toBe(1);
-        } else {
-          expect(excluded).toEqual([]);
-        }
+        const assignments = (JSON.parse(assign.detail_json) as { assignments: ({ itemId: string } & Record<string, unknown>)[] }).assignments;
+        const excluded = assignments.filter((a) => "excluded" in a);
+        // Doc 19: assignment always applies — the [FIN] item is off-category
+        // in both modes (one excluded: Bank earnings [FIN]).
+        expect(excluded.length).toBe(1);
       } finally {
         db.close();
       }
@@ -190,7 +189,7 @@ describe("CATRUN-07 stored items reused with zero new Jev calls", () => {
         trigger: "manual",
         runDate: DAY,
         categories: ["ai"],
-        stages: ["sort_classify", "sort_focus", "sort_cluster", "sort_write", "score", "persist_sorted"],
+        stages: ["select", "sort_classify", "sort_assign", "sort_cluster", "score", "sort_write", "persist_sorted"],
       });
       expect(second.status).toBe("success");
       expect(classifyDetail(db, second.runId)).toMatchObject({ classified: 1, cached: 3 });

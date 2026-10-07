@@ -24,7 +24,6 @@ import { HttpClient } from "../collectors/http.js";
 import { runCollectors } from "../collectors/registry.js";
 import { scrapingClient } from "../scraping/supervisor.js";
 import type { CollectContext, RawItemDraft, SourceStats } from "../collectors/types.js";
-import { RawItemDraft as DraftSchema } from "../collectors/types.js";
 import { createLogger } from "../utils/logger.js";
 import { DomainRateLimiter } from "../utils/rate-limit.js";
 import { ulid } from "../utils/ulid.js";
@@ -38,6 +37,7 @@ import { CATEGORY_MAX_ITEMS, categoryOverrides, collectCategory } from "../categ
 import {
   effectiveIncludeGeneralSources,
   effectiveMaxCategories,
+  effectiveTopPerCategory,
   readMyCategories,
 } from "../config/settings.js";
 import { chunkBatch, cutTitle, emitSortEvent } from "./sortEvents.js";
@@ -52,14 +52,18 @@ import type { Classifier } from "../llm/classifier.js";
 import { FallbackClassifier, JevClassifier } from "../llm/classifier.js";
 import { classifyItems } from "../sorting/classifyLabels.js";
 import type { ItemLabelRecord } from "../sorting/classifyLabels.js";
+import { QUESTION_SET_VERSION } from "../sorting/questions.js";
+import { readCachedLabels } from "../llm/labelCache.js";
+import { assignCategory, ASSIGN_CONFIDENCE_MIN } from "../sorting/assign.js";
+import type { Assignment } from "../sorting/assign.js";
 import { aggregateClusters } from "../sorting/aggregate.js";
 import type { AggregatedCluster } from "../sorting/aggregate.js";
 import { clusterItems } from "../sorting/clusterTopics.js";
 import type { SameStoryCheck, TopicCluster } from "../sorting/clusterTopics.js";
 import { generateDigest } from "../sorting/digest.js";
-import { toJevTopics, toWriterInputs } from "../sorting/sortRun.js";
-import { writeTopics } from "../sorting/writeTopics.js";
-import type { WrittenTopic } from "../sorting/writeTopics.js";
+import { toWriterInputs } from "../sorting/sortRun.js";
+import { fallbackTopic, writeTopics } from "../sorting/writeTopics.js";
+import type { WrittenTopic, WriteStats } from "../sorting/writeTopics.js";
 import { SheetsApiError } from "../sheets/client.js";
 import { createRealSheetsClient } from "../sheets/realClient.js";
 import type { SheetsClient } from "../sheets/client.js";
@@ -68,6 +72,7 @@ import type { SheetsWriteQueue } from "../sheets/queue.js";
 import { DigestRecord, RunLogRecord, SourceKey } from "../sheets/schema.js";
 import type { RawTrendRecord, SortedTrendRecord } from "../sheets/schema.js";
 import { scoreTopics } from "../sorting/score.js";
+import type { JevTopic } from "../sorting/score.js";
 import { APP_VERSION } from "../version.js";
 import {
   acquirePipelineLock,
@@ -86,29 +91,29 @@ export const STAGES = [
   "collect",
   "normalize",
   "dedupe",
-  "persist_raw",
+  "select",
   "sort_classify",
-  "sort_focus",
+  "sort_assign",
   "sort_cluster",
-  "sort_write",
   "score",
+  "sort_write",
   "persist_sorted",
   "finalize",
 ] as const;
 export type StageName = (typeof STAGES)[number];
 
-const SORT_STAGES: StageName[] = ["sort_classify", "sort_cluster",
-  "sort_write", "score", "persist_sorted", "finalize"];
+const SORT_STAGES: StageName[] = ["select", "sort_classify", "sort_assign",
+  "sort_cluster", "score", "sort_write", "persist_sorted", "finalize"];
 
 /** Animation phase per sort stage (persist_sorted closes with "done"). */
 const SORT_PHASES: Partial<Record<StageName, SortPhase>> = {
   sort_classify: "classify",
-  sort_focus: "filter",
+  sort_assign: "filter",
   sort_cluster: "cluster",
   sort_write: "write",
   score: "rank",
 };
-const PRE_PERSIST: StageName[] = ["collect", "normalize", "dedupe", "persist_raw"];
+const PRE_PERSIST: StageName[] = ["collect", "normalize", "dedupe", "select"];
 
 export type RunTrigger = "cron" | "manual" | "catchup";
 
@@ -373,7 +378,7 @@ export class Orchestrator {
   /**
    * Resume an interrupted/failed run from its first non-done requested
    * stage (or an explicit earlier stage). Refuses to rewind at or before
-   * persist_raw once rows are persisted — those already map to sheet
+   * select once rows are persisted — those already map to sheet
    * content and re-preparing would mint new ULIDs for the same stories.
    */
   async retryRun(runId: string, fromStage?: StageName): Promise<RunSummary> {
@@ -472,16 +477,16 @@ export class Orchestrator {
       dedupe: () => {
         this.stageNoop(exec, "dedupe");
       },
-      persist_raw: () => this.stagePersistRaw(exec),
+      select: () => this.stageSelect(exec),
       sort_classify: () => this.stageSortClassify(exec),
-      sort_focus: () => {
-        this.stageSortFocus(exec);
+      sort_assign: () => {
+        this.stageSortAssign(exec);
       },
       sort_cluster: () => this.stageSortCluster(exec),
-      sort_write: () => this.stageSortWrite(exec),
       score: () => {
         this.stageScore(exec);
       },
+      sort_write: () => this.stageSortWrite(exec),
       persist_sorted: () => this.stagePersistSorted(exec),
       finalize: () => this.stageFinalize(exec),
     };
@@ -605,42 +610,54 @@ export class Orchestrator {
     for (const slug of exec.categories) {
       const startedAt = new Date().toISOString();
       markCategory.run(exec.runId, slug, startedAt);
+      let collected = 0;
+      let catStatus = "ok";
       const sources = effectiveSources(slug, overrides);
       const usable = sources.filter((source) => source.collector !== "reddit" || hasRedditCreds);
       if (usable.length === 0) {
         const reason = `CATEGORY_NO_SOURCES: category '${slug}' has no usable source (reddit needs OAuth)`;
         finishCategory.run("no_sources", 0, new Date().toISOString(), reason, exec.runId, slug);
         exec.partialReasons.push(reason);
-        continue;
-      }
-      try {
-        const out = await collectCategory({ ...base, limit: CATEGORY_MAX_ITEMS }, slug, sources, CATEGORY_MAX_ITEMS, redditCreds);
-        drafts.push(...out.items);
-        stats.push(...out.stats);
-        for (const stat of out.stats) {
-          this.events.emit(exec.runId, "source", {
-            source: `${stat.source}:${slug}`,
-            status: stat.status,
-            items: stat.items,
-            duration_ms: stat.duration_ms,
-          });
+        catStatus = "no_sources";
+      } else {
+        try {
+          const out = await collectCategory({ ...base, limit: CATEGORY_MAX_ITEMS }, slug, sources, CATEGORY_MAX_ITEMS, redditCreds);
+          drafts.push(...out.items);
+          stats.push(...out.stats);
+          collected = out.items.length;
+          for (const stat of out.stats) {
+            this.events.emit(exec.runId, "source", {
+              source: `${stat.source}:${slug}`,
+              status: stat.status,
+              items: stat.items,
+              duration_ms: stat.duration_ms,
+            });
+          }
+          const failed = out.stats.some((stat) => stat.status === "error" || stat.status === "blocked");
+          if (out.items.length === 0 && failed) {
+            const errs = out.stats
+              .filter((stat) => stat.status === "error" || stat.status === "blocked")
+              .map((stat) => `${stat.source}: ${stat.error ?? stat.status}`);
+            const reason = `category '${slug}': ${errs.join("; ")}`;
+            finishCategory.run("failed", 0, new Date().toISOString(), reason, exec.runId, slug);
+            exec.partialReasons.push(reason);
+            catStatus = "failed";
+          } else {
+            finishCategory.run("ok", out.items.length, new Date().toISOString(), null, exec.runId, slug);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          finishCategory.run("failed", 0, new Date().toISOString(), message, exec.runId, slug);
+          exec.partialReasons.push(`category '${slug}': ${message}`);
+          catStatus = "failed";
         }
-        const failed = out.stats.some((stat) => stat.status === "error" || stat.status === "blocked");
-        if (out.items.length === 0 && failed) {
-          const errs = out.stats
-            .filter((stat) => stat.status === "error" || stat.status === "blocked")
-            .map((stat) => `${stat.source}: ${stat.error ?? stat.status}`);
-          const reason = `category '${slug}': ${errs.join("; ")}`;
-          finishCategory.run("failed", 0, new Date().toISOString(), reason, exec.runId, slug);
-          exec.partialReasons.push(reason);
-        } else {
-          finishCategory.run("ok", out.items.length, new Date().toISOString(), null, exec.runId, slug);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        finishCategory.run("failed", 0, new Date().toISOString(), message, exec.runId, slug);
-        exec.partialReasons.push(`category '${slug}': ${message}`);
       }
+      emitSortEvent(this.db, this.events, exec.runId, "category_status", {
+        category: slug,
+        phase: "collect",
+        status: catStatus,
+        items: collected,
+      });
     }
     if (effectiveIncludeGeneralSources(this.db, this.config)) {
       try {
@@ -664,17 +681,9 @@ export class Orchestrator {
         exec.partialReasons.push(`general sources: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    // Assemble: today's stored items join the working set; prepareRunItems
-    // dedupes by hash and the seen-filter drops re-persisted rows, so a
-    // same-scope rerun adds ~0 raw rows (CATRUN-14).
-    const seenUrls = new Set(drafts.map((d) => d.url));
-    const stored = readRunItemsByDate(this.db, exec.runDate);
-    for (const record of stored) {
-      if (seenUrls.has(record.url)) continue;
-      seenUrls.add(record.url);
-      const parsed = DraftSchema.parse(record);
-      drafts.push({ ...parsed, target_category: record.target_category ?? null });
-    }
+    // Assembly of today's stored items moved to the select stage (which
+    // filters to cached labels in the selected categories); collect only
+    // gathers fresh drafts here.
     const finishedAt = new Date().toISOString();
     const insertStats = this.db.prepare(
       `INSERT OR REPLACE INTO run_source_stats (run_id, source, status, items, duration_ms, error)
@@ -740,15 +749,66 @@ export class Orchestrator {
     });
   }
 
-  private async stagePersistRaw(exec: Execution): Promise<void> {
-    const result = await persistRawItems(this.db, this.repo(), exec.runId, exec.runDate);
-    this.setStageDetail(exec.runId, "persist_raw", result);
+  /**
+   * Select (Doc 19 Q3): persist the new raw rows (old persist_raw body),
+   * then assemble the sort working set — this run's new rows plus stored
+   * rows that already carry a cached Jev label in a selected category.
+   * Stored rows without a label are never classified (no Jev spend on
+   * unselected categories). Nothing is inserted: the selection is a list
+   * of ids, so reruns add ~0 rows and classify from cache.
+   */
+  private async stageSelect(exec: Execution): Promise<void> {
+    const persisted = await persistRawItems(this.db, this.repo(), exec.runId, exec.runDate);
+    const fresh = readRunItems(this.db, exec.runId).map((row) => row.id);
+    const storedIds: string[] = [];
+    let storedLabeled = 0;
+    let storedUnlabeled = 0;
+    if (exec.categories.length > 0) {
+      const selected = new Set(exec.categories);
+      const model = this.sorterClassifier(exec.runId).modelId;
+      const candidates = readRunItemsByDate(this.db, exec.runDate).filter((row) => row.run_id !== exec.runId);
+      for (const row of candidates) {
+        const cached = readCachedLabels(this.db, row.id, QUESTION_SET_VERSION, model);
+        const categoryAnswer = cached.find((entry) => entry.question === "category");
+        if (!categoryAnswer) {
+          storedUnlabeled += 1;
+          continue;
+        }
+        let choice = "";
+        try {
+          const parsed = JSON.parse(categoryAnswer.answerJson) as { choice?: unknown };
+          if (typeof parsed.choice === "string") choice = parsed.choice;
+        } catch {
+          choice = "";
+        }
+        if (choice !== "" && selected.has(choice.trim().toLowerCase())) {
+          storedIds.push(row.id);
+          storedLabeled += 1;
+        }
+      }
+    }
+    this.setStageDetail(exec.runId, "select", {
+      persisted,
+      newIds: fresh,
+      storedIds,
+      counts: { new: fresh.length, storedLabeled, storedUnlabeled },
+    });
   }
 
   private sortItems(exec: Execution): RawTrendRecord[] {
-    // Re-sort runs own no rows under their own id — read the date's set.
+    // Working set = this run's rows (or the date's set for re-sorts) plus
+    // the select stage's stored picks. Falls back to the legacy read when
+    // select never ran (partial stage lists).
     const resort = !exec.requested.includes("collect");
-    return resort ? readRunItemsByDate(this.db, exec.runDate) : readRunItems(this.db, exec.runId);
+    const base = resort ? readRunItemsByDate(this.db, exec.runDate) : readRunItems(this.db, exec.runId);
+    const detail = this.stageDetail(exec.runId, "select") as { storedIds?: unknown } | null;
+    const storedIds = detail && Array.isArray(detail.storedIds)
+      ? detail.storedIds.filter((id): id is string => typeof id === "string")
+      : null;
+    if (storedIds === null || storedIds.length === 0) return base;
+    const have = new Set(base.map((row) => row.id));
+    const extra = readRunItemsByDate(this.db, exec.runDate).filter((row) => storedIds.includes(row.id) && !have.has(row.id));
+    return [...base, ...extra];
   }
 
   private async stageSortClassify(exec: Execution): Promise<void> {
@@ -843,26 +903,58 @@ export class Orchestrator {
   }
 
   /**
-   * Focus filter (Doc 17 S3): strict category runs exclude items Jev placed
-   * outside the scope with confidence ≥ 0.6 (kept raw, never deleted).
-   * Scope "all" and loose mode exclude nothing. Exclusions live in the
-   * stage detail so cluster stays deterministic on resume.
+   * Assign (Doc 19 Q3): every classified item lands in exactly one of the
+   * run's categories, or is excluded (raw row kept, never deleted).
+   * Confident (≥0.6) + selected → that category; confident + unselected →
+   * off_category; below 0.6 → the source's target_category (or no
+   * assignment without one). Exclusions live in the stage detail so
+   * cluster stays deterministic on resume.
    */
-  private stageSortFocus(exec: Execution): void {
-    if (exec.scope === "all" || exec.focusMode === "loose") {
-      this.setStageDetail(exec.runId, "sort_focus", { scope: exec.scope, mode: exec.focusMode, excluded: [] });
-      return;
-    }
+  private stageSortAssign(exec: Execution): void {
     const classified = this.loadClassifyDetail(exec);
-    const wanted = new Set(exec.categories);
-    const excluded = classified.labels
-      .filter((entry) => !wanted.has(entry.labels.category.toLowerCase()) && entry.labels.category_confidence >= 0.6)
-      .map((entry) => ({ itemId: entry.itemId, category: entry.labels.category, confidence: entry.labels.category_confidence }));
-    this.setStageDetail(exec.runId, "sort_focus", { scope: exec.scope, mode: exec.focusMode, excluded });
+    const items = this.sortItems(exec);
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const selected = new Set(exec.categories);
+    const assignments: ({ itemId: string } & Assignment)[] = [];
+    let assigned = 0;
+    let offCategory = 0;
+    let lowConfidenceByTarget = 0;
+    for (const entry of classified.labels) {
+      const item = byId.get(entry.itemId);
+      const target = item?.target_category ?? null;
+      const result = assignCategory({
+        label: entry.labels.category,
+        confidence: entry.labels.category_confidence,
+        selected,
+        target,
+      });
+      if ("category" in result) {
+        assigned += 1;
+        if (entry.labels.category_confidence < ASSIGN_CONFIDENCE_MIN) lowConfidenceByTarget += 1;
+      } else if (result.excluded === "off_category") {
+        offCategory += 1;
+      }
+      assignments.push({ itemId: entry.itemId, ...result });
+    }
+    this.setStageDetail(exec.runId, "sort_assign", {
+      scope: exec.scope,
+      categories: exec.categories,
+      assignments,
+      counts: { assigned, off_category: offCategory, low_confidence_by_target: lowConfidenceByTarget },
+    });
+    const excluded = assignments.filter((a) => "excluded" in a);
     if (excluded.length > 0) {
       emitSortEvent(this.db, this.events, exec.runId, "sort_batch", {
-        stage: "filter",
-        items: excluded.map((entry) => ({ id: entry.itemId, t: "", c: entry.category.toLowerCase(), q: 0, f: false, d: false, o: true })),
+        stage: "assign",
+        items: excluded.map((entry) => ({
+          id: entry.itemId,
+          t: "",
+          c: "off_category",
+          q: 0,
+          f: false,
+          d: false,
+          o: true,
+        })),
         done: excluded.length,
         total: excluded.length,
         jev_calls: 0,
@@ -870,38 +962,65 @@ export class Orchestrator {
         cost_usd: this.llmCost(exec.runId),
       });
     }
+    for (const slug of exec.categories) {
+      emitSortEvent(this.db, this.events, exec.runId, "category_status", {
+        category: slug,
+        phase: "assign",
+        status: "done",
+        assigned: assignments.filter((a) => "category" in a && a.category === slug).length,
+      });
+    }
   }
 
-  private focusExcluded(exec: Execution): Set<string> {
-    const detail = this.stageDetail(exec.runId, "sort_focus") as { excluded?: { itemId: string }[] } | null;
-    if (!detail || !Array.isArray(detail.excluded)) return new Set();
-    return new Set(detail.excluded.map((entry) => entry.itemId));
+  private assignExcluded(exec: Execution): Set<string> {
+    const detail = this.stageDetail(exec.runId, "sort_assign") as { assignments?: ({ itemId: string } & Assignment)[] } | null;
+    if (!detail || !Array.isArray(detail.assignments)) return new Set();
+    return new Set(detail.assignments.filter((entry) => "excluded" in entry).map((entry) => entry.itemId));
   }
 
   private async stageSortCluster(exec: Execution): Promise<void> {
     const classified = this.loadClassifyDetail(exec);
     const labelMap = new Map(classified.labels.map((entry) => [entry.itemId, entry.labels]));
-    const excluded = this.focusExcluded(exec);
+    const excluded = this.assignExcluded(exec);
     const items = this.sortItems(exec).filter((item) => labelMap.has(item.id) && !excluded.has(item.id));
-    const clusters = await clusterItems(
-      items.map((item) => ({ id: item.id, title: item.title, snippet: item.snippet })),
-      this.sameStoryOption(exec),
-    );
-    const aggregateById = new Map<string, { id: string; source: string; engagementNorm: number; firstSeenToday: boolean; labels: ItemLabelRecord["labels"] }>();
+    const assigned = this.assignmentsByItem(exec);
+    // Doc 19: cluster within each category only; cluster ids carry the partition.
+    const byCategory = new Map<string, typeof items>();
+    for (const item of items) {
+      const slug = assigned.get(item.id);
+      if (!slug) continue;
+      const list = byCategory.get(slug) ?? [];
+      list.push(item);
+      byCategory.set(slug, list);
+    }
+    const clusters: TopicCluster[] = [];
+    const aggregated: AggregatedCluster[] = [];
     const hashes = [...new Set(items.map((item) => item.content_hash))];
     const firstSeen = this.firstSeenByItem(items, hashes);
-    for (const item of items) {
-      const labels = labelMap.get(item.id);
-      if (!labels) continue;
-      aggregateById.set(item.id, {
-        id: item.id,
-        source: item.source,
-        engagementNorm: item.engagement_norm,
-        firstSeenToday: firstSeen.get(item.id) === exec.runDate,
-        labels,
+    for (const [slug, partition] of [...byCategory.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
+      const part = await clusterItems(
+        partition.map((item) => ({ id: item.id, title: item.title, snippet: item.snippet })),
+        this.sameStoryOption(exec),
+      );
+      const aggregateById = new Map<string, { id: string; source: string; engagementNorm: number; firstSeenToday: boolean; labels: ItemLabelRecord["labels"] }>();
+      for (const item of partition) {
+        const labels = labelMap.get(item.id);
+        if (!labels) continue;
+        aggregateById.set(item.id, {
+          id: item.id,
+          source: item.source,
+          engagementNorm: item.engagement_norm,
+          firstSeenToday: firstSeen.get(item.id) === exec.runDate,
+          labels,
+        });
+      }
+      const partAggregated = aggregateClusters(part, aggregateById);
+      part.forEach((cluster, i) => {
+        clusters.push({ id: `${slug}:${cluster.id}`, itemIds: [...cluster.itemIds].sort() });
+        const agg = partAggregated[i];
+        if (agg) aggregated.push({ ...agg, clusterId: `${slug}:${cluster.id}` });
       });
     }
-    const aggregated = aggregateClusters(clusters, aggregateById);
     this.setStageDetail(exec.runId, "sort_cluster", { clusters, aggregated });
     emitSortEvent(this.db, this.events, exec.runId, "sort_clusters", {
       clusters: clusters.map((cluster) => {
@@ -914,6 +1033,17 @@ export class Orchestrator {
         };
       }),
     });
+  }
+
+  /** Assigned category slug per item id (from the sort_assign detail). */
+  private assignmentsByItem(exec: Execution): Map<string, string> {
+    const detail = this.stageDetail(exec.runId, "sort_assign") as { assignments?: ({ itemId: string } & Assignment)[] } | null;
+    const out = new Map<string, string>();
+    if (!detail || !Array.isArray(detail.assignments)) return out;
+    for (const entry of detail.assignments) {
+      if ("category" in entry) out.set(entry.itemId, entry.category);
+    }
+    return out;
   }
 
   private sameStoryOption(exec: Execution): { sameStory?: SameStoryCheck | undefined } {
@@ -948,18 +1078,49 @@ export class Orchestrator {
   }
 
   private async stageSortWrite(exec: Execution): Promise<void> {
+    const scoreDetail = this.stageDetail(exec.runId, "score") as { topClusters?: unknown } | null;
+    const topClusters =
+      scoreDetail && typeof scoreDetail.topClusters === "object" && scoreDetail.topClusters !== null
+        ? (scoreDetail.topClusters as Record<string, string[]>)
+        : null;
+    if (!topClusters) {
+      throw new RunRequestError(`score output missing for run ${exec.runId} — run score first`);
+    }
+    // Score first, write later: the writer sees only each category's top.
+    const order: string[] = [];
+    for (const slug of Object.keys(topClusters).sort()) {
+      const ids = topClusters[slug];
+      if (Array.isArray(ids)) order.push(...ids.filter((id): id is string => typeof id === "string"));
+    }
     const { aggregated } = this.loadClusterDetail(exec);
+    const byCluster = new Map(aggregated.map((agg) => [agg.clusterId, agg]));
+    const filtered = order.map((id) => byCluster.get(id)).filter((agg): agg is AggregatedCluster => agg !== undefined);
     const items = this.sortItems(exec);
     const byId = new Map(items.map((item) => [item.id, item]));
-    const inputs = toWriterInputs(aggregated, byId);
-    const result = await writeTopics(this.sorterWriter(exec.runId), inputs, {
-      batchSize: exec.settings.sortBatchSize,
-      onBatch: (batch) => {
-        emitSortEvent(this.db, this.events, exec.runId, "sort_topics", {
-          topics: batch.map((w) => ({ cluster_id: w.text.cluster_id, title: cutTitle(w.text.title) })),
-        });
-      },
-    });
+    const inputs = toWriterInputs(filtered, byId);
+    const onBatch = (batch: WrittenTopic[]): void => {
+      emitSortEvent(this.db, this.events, exec.runId, "sort_topics", {
+        topics: batch.map((w) => ({ cluster_id: w.text.cluster_id, title: cutTitle(w.text.title) })),
+      });
+    };
+    let result: { topics: WrittenTopic[]; stats: WriteStats };
+    try {
+      result = await writeTopics(this.sorterWriter(exec.runId), inputs, {
+        batchSize: exec.settings.sortBatchSize,
+        onBatch,
+      });
+    } catch (error) {
+      // Writer transport failure: fallback text for every top cluster, run survives.
+      const fallen = inputs.map((cluster) => ({ text: fallbackTopic(cluster), writeFailed: true }));
+      onBatch(fallen);
+      result = {
+        topics: fallen,
+        stats: { batches: 0, repaired: 0, splits: 0, followUps: 0, fallbacks: fallen.length },
+      };
+      exec.partialReasons.push(
+        `writer failed (${error instanceof Error ? error.message : String(error)}) — fallback text used`,
+      );
+    }
     const written: WrittenTopic[] = result.topics;
     const failedCards = written.filter((w) => w.writeFailed).length;
     if (failedCards > 0) {
@@ -968,37 +1129,98 @@ export class Orchestrator {
     this.setStageDetail(exec.runId, "sort_write", { written });
   }
 
+  /**
+   * Score before write (Doc 19 Q3): per-category placeholder scoring —
+   * the formula is text-free (engagement, diversity, Jev ratings), so
+   * clusters score on provisional top-item text and the writer later
+   * patches the top clusters only. Ranks restart at 1 per category.
+   */
   private stageScore(exec: Execution): void {
-    const detail = this.stageDetail(exec.runId, "sort_write") as { written?: unknown } | null;
-    if (!detail || !Array.isArray(detail.written)) {
-      throw new RunRequestError(`sort_write output missing for run ${exec.runId} — run sort_write first`);
-    }
     const { aggregated } = this.loadClusterDetail(exec);
     const items = this.sortItems(exec);
     const itemsById = new Map(items.map((item) => [item.id, item]));
+    const byId = itemsById;
     const hashes = [...new Set(items.map((item) => item.content_hash))];
     const firstSeenDates = this.firstSeenByItem(items, hashes);
-    const scored = scoreTopics({
-      topics: toJevTopics(aggregated, detail.written as WrittenTopic[]),
-      itemsById,
-      runId: exec.runId,
-      runDate: exec.runDate,
-      jevModel: this.sorterClassifier(exec.runId).modelId,
-      weights: exec.settings.scoreWeights,
-      firstSeenDates,
-      promptVersion: "w1",
-    });
-    this.db.prepare("UPDATE runs SET topics_count = ? WHERE id = ?").run(scored.topics.length, exec.runId);
+    const top = effectiveTopPerCategory(this.db, this.config);
+    const partitions = new Map<string, AggregatedCluster[]>();
+    for (const agg of aggregated) {
+      const slug = agg.clusterId.includes(":") ? (agg.clusterId.split(":")[0] as string) : agg.category.toLowerCase();
+      const list = partitions.get(slug) ?? [];
+      list.push(agg);
+      partitions.set(slug, list);
+    }
+    const topics: SortedTrendRecord[] = [];
+    const topClusters: Record<string, string[]> = {};
+    let droppedNoEvidence = 0;
+    let momentumCoerced = 0;
+    for (const slug of [...partitions.keys()].sort()) {
+      const part = partitions.get(slug) ?? [];
+      const inputs: JevTopic[] = part.map((agg) => {
+        const members = agg.itemIds
+          .map((id) => byId.get(id))
+          .filter((item): item is RawTrendRecord => item !== undefined)
+          .sort((a, b) => b.engagement_norm - a.engagement_norm);
+        const lead = members[0];
+        return {
+          title: (lead?.title ?? agg.clusterId).slice(0, 140),
+          summary: (lead?.snippet ?? "").slice(0, 280),
+          category: agg.category as JevTopic["category"],
+          tags: [],
+          relevance: Math.round(agg.relevance * 100),
+          novelty: Math.round(agg.novelty * 100),
+          momentum: agg.momentum,
+          sentiment: agg.sentiment as JevTopic["sentiment"],
+          why_trending: "",
+          content_angles: ["", "", ""],
+          item_ids: agg.itemIds,
+        };
+      });
+      const scored = scoreTopics({
+        topics: inputs,
+        itemsById,
+        runId: exec.runId,
+        runDate: exec.runDate,
+        jevModel: this.sorterClassifier(exec.runId).modelId,
+        weights: exec.settings.scoreWeights,
+        firstSeenDates,
+        promptVersion: "w1",
+      });
+      droppedNoEvidence += scored.droppedNoEvidence;
+      momentumCoerced += scored.momentumCoerced;
+      topics.push(...scored.topics);
+      // Doc-19 cut: score desc, richer sources, newer evidence, scorer rank.
+      const newestOf = (ids: string[]): string =>
+        ids.reduce((best, id) => {
+          const at = itemsById.get(id)?.published_at ?? "";
+          return at > best ? at : best;
+        }, "");
+      const byCut = (a: SortedTrendRecord, b: SortedTrendRecord): number => {
+        if (a.trend_score !== b.trend_score) return b.trend_score - a.trend_score;
+        if (a.source_count !== b.source_count) return b.source_count - a.source_count;
+        const newerA = newestOf(a.evidence_item_ids);
+        const newerB = newestOf(b.evidence_item_ids);
+        if (newerA !== newerB) return newerA < newerB ? 1 : -1;
+        return a.rank - b.rank;
+      };
+      topClusters[slug] = [...scored.topics]
+        .sort(byCut)
+        .slice(0, top)
+        .map((topic) => bestCluster(topic.evidence_item_ids, part))
+        .filter((id) => id !== "");
+    }
+    this.db.prepare("UPDATE runs SET topics_count = ? WHERE id = ?").run(topics.length, exec.runId);
     this.setStageDetail(exec.runId, "score", {
-      topics: scored.topics,
-      droppedNoEvidence: scored.droppedNoEvidence,
-      momentumCoerced: scored.momentumCoerced,
+      topics,
+      topClusters,
+      topPerCategory: top,
+      droppedNoEvidence,
+      momentumCoerced,
     });
-    const { aggregated: scoredAgg } = this.loadClusterDetail(exec);
     emitSortEvent(this.db, this.events, exec.runId, "sort_rank", {
-      ranks: scored.topics.map((topic, i) => ({
-        cluster_id: bestCluster(topic.evidence_item_ids, scoredAgg),
-        rank: i + 1,
+      ranks: topics.map((topic) => ({
+        cluster_id: bestCluster(topic.evidence_item_ids, aggregated),
+        rank: topic.rank,
         score: topic.trend_score,
       })),
     });
@@ -1022,36 +1244,79 @@ export class Orchestrator {
   }
 
   private async stagePersistSorted(exec: Execution): Promise<void> {
-    const detail = this.stageDetail(exec.runId, "score") as { topics?: unknown } | null;
-    if (!detail || !Array.isArray(detail.topics)) {
-      throw new RunRequestError(`score output missing for run ${exec.runId} — run score first`);
+    const scoreDetail = this.stageDetail(exec.runId, "score") as { topics?: unknown; topClusters?: unknown } | null;
+    if (!scoreDetail || !Array.isArray(scoreDetail.topics)) {
+      throw new RunRequestError(`score output missing for run ${exec.runId} - run score first`);
     }
-    const topics = (detail.topics as SortedTrendRecord[]).map((topic) =>
-      topic.scope === exec.scope ? topic : { ...topic, scope: exec.scope },
-    );
+    const topClusters =
+      scoreDetail.topClusters !== null && typeof scoreDetail.topClusters === "object"
+        ? (scoreDetail.topClusters as Record<string, string[]>)
+        : {};
+    const { aggregated } = this.loadClusterDetail(exec);
+    const writeDetail = this.stageDetail(exec.runId, "sort_write") as { written?: unknown } | null;
+    const written = (Array.isArray(writeDetail?.written) ? writeDetail.written : []) as WrittenTopic[];
+    const writtenByCluster = new Map(written.map((w) => [w.text.cluster_id, w]));
+    // Final sets: the score stage's top clusters per slug, rank 1..n
+    // within the category, writer text patched over placeholder scores.
+    const top = effectiveTopPerCategory(this.db, this.config);
+    const final: SortedTrendRecord[] = [];
+    for (const slug of Object.keys(topClusters).sort()) {
+      const ids = topClusters[slug];
+      if (!Array.isArray(ids)) continue;
+      ids.slice(0, top).forEach((clusterId, i) => {
+        if (typeof clusterId !== "string") return;
+        const scored = (scoreDetail.topics as SortedTrendRecord[]).find(
+          (t) => bestCluster(t.evidence_item_ids, aggregated) === clusterId,
+        );
+        if (!scored) return;
+        const card = writtenByCluster.get(clusterId);
+        final.push({
+          ...scored,
+          rank: i + 1,
+          title: card?.text.title ?? scored.title,
+          summary: card?.text.summary ?? scored.summary,
+          tags: card?.text.tags ?? scored.tags,
+          why_trending: card?.text.why_trending ?? scored.why_trending,
+          content_angles: card?.text.content_angles ?? scored.content_angles,
+          scope: "all",
+        });
+      });
+    }
     const repo = this.repo();
-    if (topics.length > 0) {
+    const labels = [...new Set(final.map((topic) => topic.category))].sort();
+    if (final.length > 0) {
       const existing = await repo.readSorted({ runDate: exec.runDate, onlyLatest: false });
       const present = new Set(
         existing.rows.filter((row) => row.run_id === exec.runId).map((row) => row.topic_id),
       );
-      const missing = topics.filter((topic) => !present.has(topic.topic_id));
+      const missing = final.filter((topic) => !present.has(topic.topic_id));
       if (missing.length > 0) await repo.appendSorted(missing);
-      await repo.markLatest(exec.runDate, exec.runId, { scope: exec.scope });
+      // One latest set per (run_date, category): a subset refresh flips
+      // only its own categories, leaving the others latest.
+      for (const label of labels) {
+        await repo.markLatest(exec.runDate, exec.runId, { category: label });
+      }
     }
     // Digest: garnish, not load-bearing — a persistent violation skips the
     // row (run goes partial) instead of failing the stage and forcing a
-    // retry that would double-append the sorted rows above.
+    // retry that would double-append the sorted rows above. Full runs (all
+    // my categories, or legacy general runs) write it; a subset refresh
+    // never rewrites it.
+    const my = readMyCategories(this.db);
+    const full =
+      exec.categories.length === 0 ||
+      (my.length > 0 &&
+        exec.categories.length === my.length &&
+        exec.categories.every((slug) => my.includes(slug)));
     let digestSkipped = false;
     const digestRow = await repo.readDigest(exec.runDate);
-    // Digest is an all-scope artifact only (CATRUN: category runs skip it).
-    if (exec.scope === "all" && topics.length > 0 && !(digestRow.row && digestRow.row.run_id === exec.runId)) {
+    if (full && final.length > 0 && !(digestRow.row && digestRow.row.run_id === exec.runId)) {
       try {
-        const top = [...topics].sort((a, b) => a.rank - b.rank).slice(0, 10);
-        const digest = await generateDigest(this.sorterWriter(exec.runId), top);
-        const categories = new Map<string, number>();
-        for (const topic of topics) categories.set(topic.category, (categories.get(topic.category) ?? 0) + 1);
-        const topCategories = [...categories.entries()]
+        const ranked = [...final].sort((a, b) => b.trend_score - a.trend_score);
+        const digest = await generateDigest(this.sorterWriter(exec.runId), ranked.slice(0, 10));
+        const counts = new Map<string, number>();
+        for (const topic of final) counts.set(topic.category, (counts.get(topic.category) ?? 0) + 1);
+        const topCategories = [...counts.entries()]
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
           .map(([category, count]) => ({ category, count }));
@@ -1060,8 +1325,8 @@ export class Orchestrator {
             run_date: exec.runDate,
             run_id: exec.runId,
             digest: digest.digest,
-            top_topic_id: topics[0]?.topic_id ?? "",
-            topics_count: topics.length,
+            top_topic_id: ranked[0]?.topic_id ?? "",
+            topics_count: final.length,
             items_count: this.sortItems(exec).length,
             sources_ok: exec.sourceStats.filter((s) => s.status === "ok").length,
             sources_total: exec.sourceStats.length,
@@ -1070,6 +1335,7 @@ export class Orchestrator {
             is_latest: true,
           }),
         );
+        await repo.markDigestLatest(exec.runDate, exec.runId);
       } catch (error) {
         digestSkipped = true;
         const message = error instanceof Error ? error.message : String(error);
@@ -1078,21 +1344,50 @@ export class Orchestrator {
       }
     }
     // Pulse index (Doc 16 G1): garnish like the digest — never fails persist.
-    if (topics.length > 0) {
+    if (final.length > 0) {
       try {
         const { writeLatestSet } = await import("../pulse/index.js");
-        const pulse = writeLatestSet(this.db, exec.runId, exec.runDate, topics, this.config.pulseTopN, undefined, exec.scope);
+        const pulse = writeLatestSet(this.db, exec.runId, exec.runDate, final, this.config.pulseTopN);
         if (pulse.topChanged) {
-          this.events.emit("pulse", "top_changed", { date: exec.runDate, topic_id: topics[0]?.topic_id ?? "" });
+          const top = [...final].sort((a, b) => b.trend_score - a.trend_score)[0];
+          this.events.emit("pulse", "top_changed", { date: exec.runDate, topic_id: top?.topic_id ?? "" });
         }
       } catch (error) {
         this.log.warn({ runId: exec.runId, err: error instanceof Error ? error.message : String(error) }, "pulse index skipped");
       }
     }
+    // Per-category outcome for the Today panels (collect wrote the rows).
+    if (final.length > 0) {
+      const kept = new Map<string, number>();
+      for (const slug of this.assignmentsByItem(exec).values()) {
+        kept.set(slug, (kept.get(slug) ?? 0) + 1);
+      }
+      const perCat = new Map<string, number>();
+      for (const topic of final) {
+        const slug = topic.category.toLowerCase();
+        perCat.set(slug, (perCat.get(slug) ?? 0) + 1);
+      }
+      const touch = this.db.prepare(
+        "UPDATE category_runs SET topics = ?, items_kept = ? WHERE run_id = ? AND category = ?",
+      );
+      for (const [slug, count] of perCat) {
+        touch.run(count, kept.get(slug) ?? 0, exec.runId, slug);
+      }
+    }
+    for (const slug of [...new Set(final.map((topic) => topic.category.toLowerCase()))].sort()) {
+      emitSortEvent(this.db, this.events, exec.runId, "category_status", {
+        category: slug,
+        phase: "persist",
+        status: "ok",
+        topics: final.filter((topic) => topic.category.toLowerCase() === slug).length,
+      });
+    }
+    this.db.prepare("UPDATE runs SET topics_count = ? WHERE id = ?").run(final.length, exec.runId);
     this.setStageDetail(exec.runId, "persist_sorted", {
-      topicsAppended: topics.length,
+      topicsAppended: final.length,
       digestSkipped,
-      markedLatest: topics.length > 0,
+      markedLatest: final.length > 0,
+      categories: labels,
     });
   }
 

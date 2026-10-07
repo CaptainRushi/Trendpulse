@@ -171,7 +171,7 @@ describe("orchestrator full run", () => {
         "collect",
         "normalize",
         "dedupe",
-        "persist_raw",
+        "select",
         "sort_classify",
         "sort_cluster",
         "sort_write",
@@ -252,7 +252,7 @@ describe("kill mid-sort_classify and resume", () => {
       expect(doomed).toHaveLength(1);
       const runId = doomed[0]?.id ?? "";
       expect(stageStatuses(db, runId)["sort_classify"]).toBe("running");
-      expect(stageStatuses(db, runId)["persist_raw"]).toBe("done");
+      expect(stageStatuses(db, runId)["select"]).toBe("done");
 
       // Restart: boot recovery marks the dead run interrupted (as index.ts does).
       const recovered = recoverOnBoot(db);
@@ -307,7 +307,7 @@ describe("kill mid-sort_classify and resume", () => {
 });
 
 describe("missing credentials fail the run (never stuck running)", () => {
-  it("unreadable service-account key marks persist_raw/stage failed", async () => {
+  it("unreadable service-account key marks select/stage failed", async () => {
     const db = openTestDb();
     try {
       const noCreds = loadConfig({ GOOGLE_SERVICE_ACCOUNT_JSON_PATH: "C:/nonexistent/key.json" });
@@ -330,7 +330,7 @@ describe("missing credentials fail the run (never stuck running)", () => {
       expect(row.status).toBe("failed"); // not left `running`
       expect(row.error).toMatch(/key\.json|service-account/i);
       const stages = stageStatuses(db, row.id);
-      expect(stages["persist_raw"]).toBe("failed");
+      expect(stages["select"]).toBe("failed");
       expect(stages["collect"]).toBe("done");
     } finally {
       db.close();
@@ -363,7 +363,7 @@ describe("retry from a failed stage", () => {  it("reuses done stages (collect r
       const failed = db.prepare("SELECT id FROM runs WHERE status = 'failed'").all() as { id: string }[];
       expect(failed).toHaveLength(1);
       const runId = failed[0]?.id ?? "";
-      expect(stageStatuses(db, runId)["persist_raw"]).toBe("failed");
+      expect(stageStatuses(db, runId)["select"]).toBe("failed");
       expect(stageStatuses(db, runId)["collect"]).toBe("done");
 
       const fetchesBeforeRetry = fetches;
@@ -376,7 +376,7 @@ describe("retry from a failed stage", () => {  it("reuses done stages (collect r
     }
   });
 
-  it("refuses to rewind at/before persist_raw once rows are persisted", async () => {
+  it("refuses to rewind at/before select once rows are persisted", async () => {
     const db = openTestDb();
     try {
       const orch = new Orchestrator({
@@ -392,7 +392,7 @@ describe("retry from a failed stage", () => {  it("reuses done stages (collect r
         trigger: "manual",
         runDate: DAY,
         sources: ["hackernews"],
-        stages: ["collect", "normalize", "dedupe", "persist_raw"],
+        stages: ["collect", "normalize", "dedupe", "select"],
       });
       expect(summary.status).toBe("success");
       db.prepare("UPDATE runs SET status = 'failed' WHERE id = ?").run(summary.runId);

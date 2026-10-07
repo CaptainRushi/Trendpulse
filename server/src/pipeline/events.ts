@@ -18,7 +18,8 @@ export type PipelineEventType =
   | "sort_clusters"
   | "sort_topics"
   | "sort_rank"
-  | "sort_phase";
+  | "sort_phase"
+  | "category_status";
 
 export interface PipelineEvent {
   seq: number;

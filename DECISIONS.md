@@ -495,3 +495,11 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Cost if wrong:** a caller passing sources bypasses the category gate; Today/cron never pass sources.
 - **Ruling:** resortRun (no production callers) gains a categories passthrough; its test pins the legacy general re-sort via explicit sources.
 - **Deviations:** persist now writes the items_run.target_category column (was payload-only); category failed rows carry the first source error; estimate keeps CATRUN-12 ceiling fields and adds per-category/writer/general blocks.
+
+## 2026-10-07 — top5-Q3 per-category pipeline (Doc 19, ponytail full)
+
+- **Ruling:** 11 stages per plan (select absorbs persist_raw's sheets-append + seen-record, then assembles). select records id lists (no inserts), so reruns add ~0 rows and classify from cache; sortItems unions run rows with select's stored picks.
+- **Ruling:** score-before-write via placeholder scoring (formula untouched, text-free); per-category scoreTopics calls (ranks restart per category); top cut = score desc, source_count desc, newer evidence, scorer rank; sort_write covers top clusters only; persist merges writer text and reassigns ranks 1..n.
+- **Ruling:** per-(date,category) latest is code-maintained (no UNIQUE index possible with multi-topic sets); topic_index flips per category label; sheets markLatest per category; digest only on full runs (general backdoor runs keep legacy digest).
+- **Ruling:** sort_focus/mode retired — assignment always applies (CATRUN-08 updated); general runs keep labels; resortRun gains select in its stage list.
+- **Cost if wrong:** a missed flip path duplicates latest rows (TOP5-16 guards refresh isolation); tie-break deviation changes which tied clusters make top-5.

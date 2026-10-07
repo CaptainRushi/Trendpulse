@@ -9,7 +9,7 @@ import { EmptyState, ErrorState, SkeletonGrid } from "../components/States.js";
 import { FlowStrip, Pill } from "../components/decode.js";
 import { SortingStage } from "../components/SortingStage.js";
 
-const STAGE_ORDER = ["collect", "normalize", "dedupe", "persist_raw", "sort_classify", "sort_focus", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"];
+const STAGE_ORDER = ["collect", "normalize", "dedupe", "select", "sort_classify", "sort_assign", "sort_cluster", "score", "sort_write", "persist_sorted", "finalize"];
 
 /**
  * Runs (§5.6): history list + detail (stage stepper, per-source table,
@@ -119,7 +119,7 @@ export function Runs(): React.JSX.Element {
                   disabled={startResort.isPending}
                   onClick={() => {
                       startResort.mutate(
-                        { stages: ["sort_classify", "sort_cluster", "sort_write", "score", "persist_sorted", "finalize"], date: detail.data.run.run_date },
+                        { stages: ["select", "sort_classify", "sort_assign", "sort_cluster", "score", "sort_write", "persist_sorted", "finalize"], date: detail.data.run.run_date },
                       {
                         onSuccess: () => {
                           toast({ tone: "good", message: "Re-sort started." });

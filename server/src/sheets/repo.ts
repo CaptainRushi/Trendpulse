@@ -263,6 +263,13 @@ export class SheetsRepo {
     return { flipped };
   }
 
+  /** Flip stale digest rows only (full runs); subset refreshes never touch the digest. */
+  async markDigestLatest(runDate: string, keepRunId: string): Promise<{ flipped: number }> {
+    const flipped = await this.flipStaleLatest(DAILY_DIGEST_TAB, "run_date", 0, "run_id", 1, "is_latest", 10, runDate, keepRunId, {});
+    this.cache.invalidate();
+    return { flipped };
+  }
+
   /**
    * Retention for raw_trends (TRD §9): rows with collected_at older than
    * runDate − retentionDays move to archive_YYYY_MM tabs (archive mode) or

@@ -106,7 +106,7 @@ function writerStub(): LlmClient {
     const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
     const user = body.messages[body.messages.length - 1]?.content ?? "";
     const content = user.startsWith("TOPICS:")
-      ? { digest: "One. Two." }
+      ? { digest: "One. Two. Three." }
       : {
           topics: [...user.matchAll(/<<<CLUSTER (\S+)>>>/g)].map((m) => ({
             cluster_id: m[1],

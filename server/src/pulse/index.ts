@@ -16,6 +16,8 @@ export interface IndexableTopic {
   source_count: number;
   hidden: boolean;
   evidence_item_ids: string[];
+  /** Jev category label (e.g. "AI"); absent (tests/seeds) groups as Other. */
+  category?: string;
 }
 
 export interface IndexedTopic {
@@ -86,18 +88,29 @@ export function writeLatestSet(
   topics: IndexableTopic[],
   topN: number,
   sampledAt: string = new Date().toISOString(),
-  scope = "all",
 ): WriteSetResult {
+  // Doc 19: one latest set per (run_date, category). The previous overall
+  // top (highest score among latest rows) decides topChanged.
   const previous = db
-    .prepare("SELECT topic_id FROM topic_index WHERE run_date = ? AND scope_key = ? AND is_latest = 1 ORDER BY rank LIMIT 1")
-    .get(runDate, scope) as { topic_id: string } | undefined;
-  db.prepare("UPDATE topic_index SET is_latest = 0 WHERE run_date = ? AND scope_key = ? AND run_id <> ?").run(runDate, scope, runId);
+    .prepare("SELECT topic_id FROM topic_index WHERE run_date = ? AND is_latest = 1 ORDER BY score DESC LIMIT 1")
+    .get(runDate) as { topic_id: string } | undefined;
+  const byCategory = new Map<string, IndexableTopic[]>();
+  for (const topic of topics) {
+    const category = topic.category ?? "Other";
+    const list = byCategory.get(category) ?? [];
+    list.push(topic);
+    byCategory.set(category, list);
+  }
+  const flip = db.prepare("UPDATE topic_index SET is_latest = 0 WHERE run_date = ? AND category = ? AND run_id <> ?");
+  for (const category of byCategory.keys()) {
+    flip.run(runDate, category, runId);
+  }
   const insertTopic = db.prepare(
-    "INSERT INTO topic_index (topic_id, run_id, run_date, rank, title, score, evidence_item_ids_json, created_at, is_latest, scope_key) " +
+    "INSERT INTO topic_index (topic_id, run_id, run_date, rank, title, score, evidence_item_ids_json, created_at, is_latest, category) " +
       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?) " +
       "ON CONFLICT(topic_id) DO UPDATE SET run_id = excluded.run_id, run_date = excluded.run_date, " +
       "rank = excluded.rank, title = excluded.title, score = excluded.score, " +
-      "evidence_item_ids_json = excluded.evidence_item_ids_json, is_latest = 1, scope_key = excluded.scope_key",
+      "evidence_item_ids_json = excluded.evidence_item_ids_json, is_latest = 1, category = excluded.category",
   );
   const insertSample = db.prepare(
     "INSERT INTO topic_samples (topic_id, sampled_at, index_value, total, items_sampled, items_failed, detail_json) " +
@@ -107,7 +120,7 @@ export function writeLatestSet(
   const ranked = sortVisible(topics);
   let baselined = 0;
   ranked.forEach((topic, i) => {
-    insertTopic.run(topic.topic_id, runId, runDate, topic.rank, topic.title, topic.trend_score, JSON.stringify(topic.evidence_item_ids), sampledAt, scope);
+    insertTopic.run(topic.topic_id, runId, runDate, topic.rank, topic.title, topic.trend_score, JSON.stringify(topic.evidence_item_ids), sampledAt, topic.category ?? "Other");
     if (i < topN) {
       const items = pickSampledItems(topic.evidence_item_ids, baselines);
       if (items.length > 0) {
@@ -119,7 +132,8 @@ export function writeLatestSet(
       }
     }
   });
-  const next = ranked[0]?.topic_id ?? "";
+  // Overall top = highest score (ranks restart at 1 per category now).
+  const next = [...ranked].sort((a, b) => b.trend_score - a.trend_score)[0]?.topic_id ?? "";
   return { indexed: ranked.length, baselined, topChanged: next !== "" && next !== (previous?.topic_id ?? "") };
 }
 
