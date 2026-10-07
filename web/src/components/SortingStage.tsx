@@ -1,9 +1,13 @@
 /**
- * SortingStage (Doc 17 S5): live sorting animation from real pipeline events.
+ * SortingStage (Doc 17 S5, Doc 19 Q4): live sorting animation from real pipeline events.
  * Dots drop into category bins as sort_batch events arrive, merge into blobs
  * on sort_clusters, become titled cards on sort_topics, and reorder by score
  * (FLIP) on sort_rank. Every dot is a real item; nothing is faked. Reduced
  * motion shows counters only. Transform/opacity animations only.
+ *
+ * Doc 19: `categories` (my-category slugs) restricts bins to the selected
+ * categories plus off-category and discarded. A subset refresh animates
+ * only its own items because the run emits only those events.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
@@ -155,7 +159,7 @@ function applyBatch(model: SortModel, batch: SortEvent[], onPhase: (phase: Phase
   return { model: { dots, clusters }, counts };
 }
 
-export function SortingStage({ runId, compact = false }: { runId: string; compact?: boolean }): React.JSX.Element | null {
+export function SortingStage({ runId, compact = false, categories }: { runId: string; compact?: boolean; categories?: string[] }): React.JSX.Element | null {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [model, setModel] = useState<SortModel>({ dots: new Map(), clusters: new Map() });
   const [phase, setPhase] = useState<Phase | null>(null);
@@ -355,12 +359,20 @@ export function SortingStage({ runId, compact = false }: { runId: string; compac
   const dotList = [...dots.values()];
   const shown = dotList.slice(0, DOT_CAP);
   const hidden = dotList.length - shown.length;
+  const selected = categories === undefined ? null : new Set(categories.map((c) => c.toLowerCase()));
   const bins = new Map<string, DotState[]>();
   for (const dot of shown) {
-    const key = dot.tray === "bins" ? dot.category : dot.tray;
-    const list = bins.get(key) ?? [];
+    if (dot.tray !== "bins") {
+      const list = bins.get(dot.tray) ?? [];
+      list.push(dot);
+      bins.set(dot.tray, list);
+      continue;
+    }
+    // Doc 19 bins: selected categories only (plus off-category/discarded).
+    if (selected !== null && !selected.has(dot.category.toLowerCase())) continue;
+    const list = bins.get(dot.category) ?? [];
     list.push(dot);
-    bins.set(key, list);
+    bins.set(dot.category, list);
   }
 
   return (

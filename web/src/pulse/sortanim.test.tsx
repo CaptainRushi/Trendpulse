@@ -54,6 +54,15 @@ function renderStage(runId = "run-1", compact = false): void {
   );
 }
 
+function renderStageWithCategories(categories: string[]): void {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <SortingStage runId="run-1" categories={categories} />
+    </QueryClientProvider>,
+  );
+}
+
 const AI_IDS = ["a1", "a2", "a3"];
 
 describe("SORTANIM-05 phase rendering from event fixtures", () => {
@@ -256,5 +265,27 @@ describe("SORTANIM-14 picker behavior", () => {
     expect(screen.getByRole("link", { name: /default categories/ }).getAttribute("href")).toBe("/settings");
     fireEvent.click(screen.getByRole("button", { name: "estimate" }));
     expect(await screen.findByText(/10 new items/)).not.toBeNull();
+  });
+});
+describe("TOP5-20 bins match my_categories", () => {
+  const events = [
+    batch(["a1", "a2", "a3"], "ai"),
+    batch(["f1", "f2"], "finance"),
+    batch(["s1"], "science"),
+    { type: "sort_batch", stage: "assign", items: [{ id: "o1", t: "", c: "off_category", q: 0, f: false, d: false, o: true }], done: 1, total: 1, jev_calls: 0, fallback_calls: 0, cost_usd: 0 },
+  ];
+  it("with categories: only selected bins plus off-category, counts match assignment", async () => {
+    stubSortState(events);
+    renderStageWithCategories(["ai", "finance"]);
+    await screen.findByRole("button", { name: /ai: 3 items/ });
+    await screen.findByRole("button", { name: /finance: 2 items/ });
+    expect(screen.queryByRole("button", { name: /science/ })).toBeNull();
+    expect(await screen.findByRole("button", { name: /off: 1 items/ })).not.toBeNull();
+  });
+  it("without categories: all bins show (legacy default)", async () => {
+    stubSortState(events);
+    renderStage();
+    await screen.findByRole("button", { name: /ai: 3 items/ });
+    await screen.findByRole("button", { name: /science: 1 items/ });
   });
 });

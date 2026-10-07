@@ -503,3 +503,8 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Ruling:** per-(date,category) latest is code-maintained (no UNIQUE index possible with multi-topic sets); topic_index flips per category label; sheets markLatest per category; digest only on full runs (general backdoor runs keep legacy digest).
 - **Ruling:** sort_focus/mode retired — assignment always applies (CATRUN-08 updated); general runs keep labels; resortRun gains select in its stage list.
 - **Cost if wrong:** a missed flip path duplicates latest rows (TOP5-16 guards refresh isolation); tie-break deviation changes which tied clusters make top-5.
+
+## 2026-10-07 — top5-Q4 sorting animation bins (Doc 19, ponytail full)
+
+- **Ruling:** SortingStage gains an optional categories prop (my slugs); bins filter to selected + off-category + discarded when provided, unfiltered otherwise (legacy default). Subset refreshes animate only their items because the run emits only those events — no component state change needed.
+- **Cost if wrong:** a general run with the prop hides out-of-scope dots from the animation (counts still exact for shown bins).
