@@ -1229,3 +1229,62 @@ textarea.input {
   background: var(--lime-bg);
   border-color: var(--lime-deep);
 }
+
+/* -- my categories + category panels (Doc 19) -- */
+
+.chip .chip-btn {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  margin-left: 4px;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.chip .chip-btn:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.chip .chip-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.cat-panels {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1080px) {
+  .cat-panels {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.cat-panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.cat-panel-head .btn {
+  margin-left: auto;
+}
+
+.estimate-pop {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 12px 16px;
+  margin-top: 8px;
+}
+
+.estimate-pop ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}

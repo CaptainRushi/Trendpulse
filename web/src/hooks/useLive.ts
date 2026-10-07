@@ -28,6 +28,15 @@ export function useLiveSeries(date: string | null, scope: string): ReturnType<ty
   });
 }
 
+export interface CategoryEstimate {
+  category: string;
+  sources: string[];
+  expected_new_items: number;
+  stored_items_reused: number;
+  jev_calls_expected: number;
+  writer_clusters_expected: number;
+}
+
 export interface RunEstimate {
   scope: string;
   mode: string;
@@ -35,8 +44,12 @@ export interface RunEstimate {
   expected_new_items: number;
   stored_items_reused: number;
   jev_calls_expected: number;
+  writer_calls_expected: number;
   cost_usd_estimate: number;
   warnings: string[];
+  heuristic: boolean;
+  per_category: CategoryEstimate[];
+  general: { included: boolean; sources: string[]; expected_new_items: number; jev_calls_expected: number };
 }
 
 export function useEstimate(categories: string[], mode: string): ReturnType<typeof useQuery<RunEstimate>> {

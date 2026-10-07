@@ -94,10 +94,26 @@ function pulseSamples(): Record<string, unknown> {
 interface StubOptions {
   top?: Record<string, unknown>;
   topics?: Record<string, unknown>[];
+  my?: string[];
+  panels?: Record<string, unknown>[];
+  digest?: Record<string, unknown> | null;
 }
 
 function stubPulse(options: StubOptions = {}): void {
   const top = options.top ?? pulseTop();
+  const my = options.my ?? ["tech"];
+  const panels = options.panels ?? [
+    {
+      category: "tech", status: "ok", last_run_at: "2026-10-04T06:02:00.000Z",
+      sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 1, items_kept: 1 },
+      topics: [
+        { id: "t1", title: "Alpha launch day", summary: "Alpha launched today.", category: "tech", score: 92, momentum: "rising", source_count: 3, rank: 1 },
+      ],
+    },
+  ];
+  const digest = options.digest === undefined
+    ? { digest: "Alpha launched. Beta rallied.", topics_count: 1, items_count: 412, sources_ok: 1, sources_total: 1 }
+    : options.digest;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: unknown) => {
@@ -106,12 +122,21 @@ function stubPulse(options: StubOptions = {}): void {
       const json = (body: unknown): Response =>
         new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
       if (path === "/api/health") return json(HEALTH);
+      if (path === "/api/my-categories") {
+        return json({ my_categories: my, max_categories: 6, top_per_category: 5, include_general_sources: false });
+      }
+      if (path === "/api/today/categories") return json({ categories: panels });
       if (path === "/api/today/top") return json(top);
       if (path === "/api/live/samples") return json(pulseSamples());
       if (path === "/api/trends") return json({ date: "2026-10-04", items: options.topics ?? [], total: 0, warnings: 0, cache: { age_s: 1 } });
-      if (path === "/api/digest") return json({ digest: "d", topics_count: 1, items_count: 1, sources_ok: 1, sources_total: 1 });
+      if (path === "/api/digest") {
+        return digest === null
+          ? new Response("no digest", { status: 404 })
+          : json(digest);
+      }
       if (path === "/api/dates") return json({ dates: ["2026-10-04"] });
       if (path === "/api/runs") return json({ runs: [], total: 0 });
+      if (path === "/api/runs/active") return json({ run_id: null });
       if (path === "/api/jev/health") return json({ budget_used_usd: 0 });
       return json({});
     }),
@@ -198,48 +223,45 @@ describe("PULSE-23 stream merge without refetch", () => {
 });
 
 describe("PULSE-24 hero shows the top topic", () => {
-  it("card, badge and scores toggle render from the route", async () => {
+  it("top title across panels plus the digest line render", async () => {
     stubPulse();
     renderToday();
-    expect(await screen.findByText("top topic today")).not.toBeNull();
-    expect(await screen.findByText("Alpha launch day")).not.toBeNull();
-    expect(screen.getByText("Unboxing frenzy")).not.toBeNull();
-    expect(await screen.findByText(/sampled/)).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "scores" }));
-    expect(screen.getByText("92")).not.toBeNull();
+    expect(await screen.findAllByText("Alpha launch day")).not.toHaveLength(0);
+    expect(screen.getByText("Alpha launched. Beta rallied.")).not.toBeNull();
+    expect(screen.getByLabelText("tech trends")).not.toBeNull();
   });
 });
 
 describe("PULSE-25 empty, no-live-metric and previous-day states", () => {
-  it("empty hero nudges to runs", async () => {
-    stubPulse({ top: pulseTop({ topic: null, runner_ups: [] }) });
+  it("no topics falls back to the default title and lede", async () => {
+    stubPulse({
+      panels: [
+        {
+          category: "tech", status: "idle", last_run_at: null,
+          sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 0, items_kept: 0 }, topics: [],
+        },
+      ],
+      digest: null,
+    });
     renderToday();
-    expect(await screen.findByText("no top topic yet")).not.toBeNull();
-    expect(screen.getByRole("link", { name: "run now" })).not.toBeNull();
-  });
-
-  it("no live metric shows the note and defaults to scores", async () => {
-    const noMetric = pulseTop();
-    (noMetric.topic as Record<string, unknown>)["has_live_metric"] = false;
-    stubPulse({ top: noMetric });
-    renderToday();
-    expect(await screen.findByText(/no live numbers for this topic's sources/)).not.toBeNull();
-    expect(screen.getByText("92")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "sample now" })).toBeNull();
-  });
-
-  it("previous-day fallback labels the date", async () => {
-    stubPulse({ top: pulseTop({ from_previous_day: true, date: "2026-10-03" }) });
-    renderToday();
-    expect(await screen.findByText(/from 2026-10-03/)).not.toBeNull();
+    expect(await screen.findByText(/posting about/)).not.toBeNull();
+    expect(screen.getByText(/one line from the writer/)).not.toBeNull();
   });
 });
 
 describe("PULSE-26 hostile titles render as inert text", () => {
   it("hero title cannot inject markup", async () => {
-    const evil = pulseTop();
-    (evil.topic as Record<string, unknown>)["title"] = '<img src=x onerror="alert(1)">';
-    stubPulse({ top: evil });
+    stubPulse({
+      panels: [
+        {
+          category: "tech", status: "ok", last_run_at: "2026-10-04T06:02:00.000Z",
+          sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 1, items_kept: 1 },
+          topics: [
+            { id: "hx", title: '<img src=x onerror="alert(1)">', summary: "x", category: "tech", score: 90, momentum: "new", source_count: 1, rank: 1 },
+          ],
+        },
+      ],
+    });
     const { container } = render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <ToastProvider>
@@ -249,7 +271,7 @@ describe("PULSE-26 hostile titles render as inert text", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    expect(await screen.findByText('<img src=x onerror="alert(1)">')).not.toBeNull();
+    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(2);
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
   });
@@ -279,11 +301,7 @@ describe("PULSE-27 series colors meet contrast on the panel", () => {
 });
 
 describe("PULSE-28 reduced motion", () => {
-  it("no flash class when the media query matches", async () => {
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn(() => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined })),
-    );
+  it("hero carries no motion-dependent classes", async () => {
     stubPulse();
     const { container } = render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -294,14 +312,30 @@ describe("PULSE-28 reduced motion", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    await screen.findByText("Alpha launch day");
+    await screen.findAllByText("Alpha launch day");
     expect(container.querySelector(".pulse-flash")).toBeNull();
   });
 });
 
 describe("PULSE-29 a11y scan of the section", () => {
-  it("roles, labels, table, focus and live region are present", async () => {
-    stubPulse();
+  it("panels expose labels, buttons and a live region", async () => {
+    stubPulse({
+      my: ["ai", "finance"],
+      panels: [
+        {
+          category: "ai", status: "ok", last_run_at: "2026-10-04T06:02:00.000Z",
+          sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 1, items_kept: 1 },
+          topics: [
+            { id: "t1", title: "Alpha launch day", summary: "Alpha launched today.", category: "ai", score: 92, momentum: "rising", source_count: 3, rank: 1 },
+          ],
+          note: "only 1 topic found · sources may be thin",
+        },
+        {
+          category: "finance", status: "idle", last_run_at: null,
+          sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 0, items_kept: 0 }, topics: [],
+        },
+      ],
+    });
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <ToastProvider>
@@ -311,21 +345,35 @@ describe("PULSE-29 a11y scan of the section", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    await screen.findByText("Alpha launch day");
-    const section = screen.getByRole("region", { name: "Top topic today" });
-    expect(section.querySelector("svg")?.getAttribute("role")).toBe("img");
-    expect(section.querySelector("svg")?.getAttribute("aria-label")).toContain("growth since baseline");
-    expect(section.querySelector("table")).not.toBeNull();
-    expect(section.querySelector("svg")?.getAttribute("tabindex")).toBe("0");
-    expect(section.querySelector('[aria-live="polite"]')).not.toBeNull();
-    expect(section.querySelector('[aria-label="live status"]')).not.toBeNull();
-    expect(section.querySelector('[aria-label="Chart view"]')).not.toBeNull();
+    await screen.findAllByText("Alpha launch day");
+    const section = screen.getByRole("region", { name: "Category trends" });
+    expect(section.querySelector('[aria-label="ai trends"]')).not.toBeNull();
+    const refresh = screen.getByRole("button", { name: "refresh ai" });
+    refresh.focus();
+    expect(document.activeElement).toBe(refresh);
+    expect(screen.getByRole("note")).not.toBeNull();
+    expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
   });
 });
 
 describe("PULSE-30 narrow layout structure", () => {
-  it("grid stacks by default and the svg scales", async () => {
-    stubPulse();
+  it("panels render in a single grid container", async () => {
+    stubPulse({
+      my: ["ai", "finance"],
+      panels: [
+        {
+          category: "ai", status: "ok", last_run_at: "2026-10-04T06:02:00.000Z",
+          sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 1, items_kept: 1 },
+          topics: [
+            { id: "t1", title: "Alpha launch day", summary: "Alpha launched today.", category: "ai", score: 92, momentum: "rising", source_count: 3, rank: 1 },
+          ],
+        },
+        {
+          category: "finance", status: "idle", last_run_at: null,
+          sources: [{ name: "rss", status: "ok" }], stats: { items_collected: 0, items_kept: 0 }, topics: [],
+        },
+      ],
+    });
     const { container } = render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <ToastProvider>
@@ -335,10 +383,8 @@ describe("PULSE-30 narrow layout structure", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    await screen.findByText("Alpha launch day");
-    expect(container.querySelector(".pulse-grid")).not.toBeNull();
-    const svg = container.querySelector(".live-chart svg");
-    expect(svg?.getAttribute("viewBox")).toBe("0 0 640 260");
-    expect(svg?.getAttribute("width")).toBe("100%");
+    await screen.findAllByText("Alpha launch day");
+    const grid = container.querySelector(".cat-panels");
+    expect(grid?.children.length).toBe(2);
   });
 });

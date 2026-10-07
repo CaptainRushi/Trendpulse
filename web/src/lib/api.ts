@@ -245,6 +245,42 @@ export interface TrendsResponse {
   cache: { age_s: number };
 }
 
+/* ── Doc 19 my-categories + per-category panels ── */
+
+export interface MyCategories {
+  my_categories: string[];
+  max_categories: number;
+  top_per_category: number;
+  include_general_sources: boolean;
+}
+
+export interface CategoryTopicSummary {
+  id: string;
+  title: string;
+  summary: string;
+  category: string;
+  score: number;
+  momentum: string;
+  source_count: number;
+  rank: number;
+}
+
+export type PanelStatus = "idle" | "running" | "ok" | "partial" | "failed" | "no_sources";
+
+export interface CategoryPanelData {
+  category: string;
+  status: PanelStatus;
+  last_run_at: string | null;
+  sources: { name: string; status: string; hint?: string }[];
+  stats: { items_collected: number; items_kept: number };
+  topics: CategoryTopicSummary[];
+  note?: string;
+}
+
+export interface TodayCategories {
+  categories: CategoryPanelData[];
+}
+
 export interface RawResponse {
   date: string | null;
   items: RawItem[];

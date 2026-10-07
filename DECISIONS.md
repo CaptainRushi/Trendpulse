@@ -508,3 +508,10 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 
 - **Ruling:** SortingStage gains an optional categories prop (my slugs); bins filter to selected + off-category + discarded when provided, unfiltered otherwise (legacy default). Subset refreshes animate only their items because the run emits only those events — no component state change needed.
 - **Cost if wrong:** a general run with the prop hides out-of-scope dots from the animation (counts still exact for shown bins).
+
+## 2026-10-07 — top5-Q5 frontend panels (Doc 19, ponytail full)
+
+- **Ruling:** Today rewritten around my-categories (chips/panels/onboarding); pulse live-graph hero removed from Today (hero-graph cut per cut list, no docs/16 in repo). PULSE-24/25/26/28/29/30 bodies rewritten to the Doc-19 hero/panels with IDs kept; UI-02/03 updated; verify pins only UI-02/03/05 (all present).
+- **Ruling:** TOP5-26 (viewports) moves to Q6 Playwright (JSDOM has no layout); axe not automated (no new heavy deps) — keyboard/roles/live-region covered in TOP5-27, axe manual.
+- **Ruling:** panels poll while a run is active (2.5s) + category_status/sort_rank/done events invalidate; announcements fire on running-to-terminal transitions.
+- **Cost if wrong:** poll/event double-refresh is idempotent (query invalidation); a missed event still resolves on next poll.

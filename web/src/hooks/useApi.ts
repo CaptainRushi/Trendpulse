@@ -4,12 +4,14 @@ import { api } from "../lib/api";
 import type {
   Digest,
   Health,
+  MyCategories,
   RawItem,
   RawResponse,
   RunDetail,
   RunRow,
   SettingView,
   SourceEntry,
+  TodayCategories,
   TrendsResponse,
 } from "../lib/api";
 
@@ -135,6 +137,37 @@ export function useSettings(): ReturnType<typeof useQuery<{ settings: Record<str
     queryKey: ["settings"],
     queryFn: () => api.get<{ settings: Record<string, SettingView> }>("/api/settings"),
     staleTime: STALE_MS,
+    retry: false,
+  });
+}
+
+export function useMyCategories(): ReturnType<typeof useQuery<MyCategories>> {
+  return useQuery({
+    queryKey: ["my-categories"],
+    queryFn: () => api.get<MyCategories>("/api/my-categories"),
+    staleTime: STALE_MS,
+    retry: false,
+  });
+}
+
+export function useTodayCategories(activeRun: boolean): ReturnType<typeof useQuery<TodayCategories>> {
+  return useQuery({
+    queryKey: ["today-categories"],
+    queryFn: () => api.get<TodayCategories>("/api/today/categories"),
+    staleTime: 10_000,
+    refetchInterval: activeRun ? 2_500 : false,
+    retry: false,
+  });
+}
+
+export function useSaveMyCategories(): ReturnType<typeof useMutation<{ my_categories: string[] }, Error, string[]>> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (my: string[]) => api.put<{ my_categories: string[] }>("/api/my-categories", { my_categories: my }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["my-categories"] });
+      void client.invalidateQueries({ queryKey: ["today-categories"] });
+    },
   });
 }
 
