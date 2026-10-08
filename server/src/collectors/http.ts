@@ -153,13 +153,31 @@ export class HttpClient {
     body: string,
     options: { headers?: Record<string, string>; timeoutMs?: number } = {},
   ): Promise<HttpResponse> {
+    return this.post(url, body, "application/x-www-form-urlencoded", options);
+  }
+
+  /** JSON POST (GraphQL endpoints). Same limiter/retry as GET. */
+  async postJson(
+    url: string,
+    body: unknown,
+    options: { headers?: Record<string, string>; timeoutMs?: number } = {},
+  ): Promise<HttpResponse> {
+    return this.post(url, JSON.stringify(body), "application/json", options);
+  }
+
+  private async post(
+    url: string,
+    body: string,
+    contentType: string,
+    options: { headers?: Record<string, string>; timeoutMs?: number } = {},
+  ): Promise<HttpResponse> {
     const domain = new URL(url).hostname;
     return this.limiter.run(domain, async () => {
       let lastError: Error | null = null;
       for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
         const headers: Record<string, string> = {
           "user-agent": this.userAgent,
-          "content-type": "application/x-www-form-urlencoded",
+          "content-type": contentType,
           ...options.headers,
         };
         let response: Response;

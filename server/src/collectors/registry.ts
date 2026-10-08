@@ -6,6 +6,8 @@
 import pLimit from "p-limit";
 import type { SourceKey } from "../sheets/schema.js";
 import type { Collector, CollectContext, CollectResult, PingResult, SourceStats } from "./types.js";
+import type { SourceConfig } from "./types.js";
+import type { TrendPulseConfig } from "../config/env.js";
 export { httpPing } from "./ping.js";
 import { hackernewsCollector } from "./hackernews.js";
 import { googleTrendsCollector } from "./google-trends.js";
@@ -14,6 +16,9 @@ import { githubCollector } from "./github.js";
 import { wikipediaCollector } from "./wikipedia.js";
 import { rssCollector } from "./rss.js";
 import { webpageCollector } from "./webpage.js";
+import { devtoCollector } from "./devto.js";
+import { youtubeCollector } from "./youtube.js";
+import { producthuntCollector } from "./producthunt.js";
 
 export const COLLECTORS: Record<SourceKey, Collector> = {
   hackernews: hackernewsCollector,
@@ -23,37 +28,32 @@ export const COLLECTORS: Record<SourceKey, Collector> = {
   wikipedia: wikipediaCollector,
   rss: rssCollector,
   webpage: webpageCollector,
-  // Not in Phase 3 scope — declared so the registry type is exhaustive.
-  youtube: notImplemented("youtube"),
-  producthunt: notImplemented("producthunt"),
-  devto: notImplemented("devto"),
+  devto: devtoCollector,
+  // Key-gated: without keys they report skipped (COL-14); shapes for
+  // youtube/producthunt are unverified live (no key to record against).
+  youtube: youtubeCollector,
+  producthunt: producthuntCollector,
 };
 
-function notImplemented(key: SourceKey): Collector {
-  return {
-    key,
-    label: key,
-    requires: [],
-    collect(_ctx): Promise<CollectResult> {
-      return Promise.resolve({
-        items: [],
-        stats: {
-          source: key,
-          status: "skipped",
-          items: 0,
-          duration_ms: 0,
-          error: `collector '${key}' not implemented yet`,
-        },
-      });
-    },
-    ping(): Promise<PingResult> {
-      return Promise.resolve({ ok: false, detail: "not implemented" });
-    },
-  };
+/**
+ * Env-provided source keys, merged UNDER explicit per-source config
+ * (a key pasted into a source's config_json wins over the env default).
+ * Without this, env keys like GITHUB_TOKEN never reach collectors — they
+ * only see their source's config_json.
+ */
+export function envSourceConfig(config: TrendPulseConfig): SourceConfig {
+  const out: SourceConfig = {};
+  if (config.githubToken !== "") out["github_token"] = config.githubToken;
+  if (config.redditClientId !== "" && config.redditClientSecret !== "") {
+    out["reddit_client_id"] = config.redditClientId;
+    out["reddit_client_secret"] = config.redditClientSecret;
+  }
+  if (config.youtubeApiKey !== "") out["youtube_api_key"] = config.youtubeApiKey;
+  if (config.producthuntToken !== "") out["producthunt_token"] = config.producthuntToken;
+  return out;
 }
 
-export interface RunCollectorsOptions {
-  /** Restrict to these keys (CLI --source); default all with a collect(). */
+export interface RunCollectorsOptions {  /** Restrict to these keys (CLI --source); default all with a collect(). */
   keys?: SourceKey[];
   /** Per-source limit override (sources.item_limit). */
   limits?: Partial<Record<SourceKey, number>>;

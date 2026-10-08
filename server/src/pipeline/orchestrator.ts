@@ -34,6 +34,7 @@ import { pipelineBus } from "./events.js";
 import type { EventBus } from "./events.js";
 import { effectiveSources, validateMyCategories } from "../categories/registry.js";
 import { CATEGORY_MAX_ITEMS, categoryOverrides, collectCategory } from "../categories/collect.js";
+import { envSourceConfig } from "../collectors/registry.js";
 import {
   effectiveIncludeGeneralSources,
   effectiveMaxCategories,
@@ -592,10 +593,7 @@ export class Orchestrator {
     const overrides = categoryOverrides(this.db);
     const drafts: (RawItemDraft & { target_category?: string | null })[] = [];
     const stats: SourceStats[] = [];
-    const redditCreds =
-      this.config.redditClientId !== "" && this.config.redditClientSecret !== ""
-        ? { reddit_client_id: this.config.redditClientId, reddit_client_secret: this.config.redditClientSecret }
-        : {};
+    const redditCreds = envSourceConfig(this.config);
     const hasRedditCreds =
       "reddit_client_id" in redditCreds ||
       ((process.env["REDDIT_CLIENT_ID"] ?? "") !== "" && (process.env["REDDIT_CLIENT_SECRET"] ?? "") !== "");
@@ -1541,10 +1539,11 @@ export class Orchestrator {
       config_json: string;
     }[];
     const map = new Map(rows.map((row) => [row.key, row]));
+    const env = envSourceConfig(this.config);
     for (const key of keys) {
       const found = map.get(key);
       limits[key] = limitOverride ?? found?.item_limit ?? this.config.maxItemsPerSource;
-      configs[key] = found ? parseConfigJson(found.config_json) : {};
+      configs[key] = { ...env, ...(found ? parseConfigJson(found.config_json) : {}) };
     }
     return { limits, configs };
   }

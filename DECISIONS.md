@@ -532,3 +532,9 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Ruling:** restored the live growth chart per-category (Q5.4 un-cut on request): GET /api/live/samples gains ?category= (slug, 400 unknown); writeLatestSet baselines every category rank-1 so #1s get sampled; Today renders one LiveChart with one series per selected category's #1 + scores fallback + sample-now + per-category no-samples notes. No follow-the-panel selection state (no such state exists).
 - **Collateral fix:** hidden LiveChart data table widened 375px viewports (absolute table without left + nowrap cells); pinned with table-layout fixed and wrapped cells.
 - **Tests:** TOP5-29 (server filter + baselining), TOP5-30 (web section); suite 506/506 server, 53/53 web, e2e 23/23; lint+typecheck clean.
+
+## 2026-10-07 — platforms fix (reddit/dev.to/youtube/producthunt)
+
+- **Done:** dev.to collector implemented + verified live (50 items); env keys now reach collectors (they never did — only config_json arrived); youtube/producthunt collectors implemented key-gated with COL-14 skip messages (shapes unverified live, no keys to record against).
+- **Ruling:** youtube/producthunt ship on documented API shapes marked unverified rather than staying stubs — inert without keys, ready the moment keys land; verify live then.
+- **Still needs the user:** REDDIT_CLIENT_ID+SECRET (reddit.com/prefs/apps, script app), YOUTUBE_API_KEY (console.cloud.google.com, YouTube Data API v3), PRODUCTHUNT_TOKEN (api.producthunt.com/v2/oauth/applications), GITHUB_TOKEN optional (github.com/settings/tokens, raises search quota). Reddit without OAuth stays blocked (403) by design.

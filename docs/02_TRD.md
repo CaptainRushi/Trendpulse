@@ -122,7 +122,7 @@ export interface CollectResult { items: RawItemDraft[]; stats: SourceStats; }
 | `webpage` | user-configured URLs → fetch → Readability → OmniRoute LLM extract | none | robots.txt check, Playwright fallback |
 | `youtube` (v1.1) | Data API `videos.list chart=mostPopular` | views, likes | needs `YOUTUBE_API_KEY` |
 | `producthunt` (v1.1) | GraphQL posts of the day | votes | needs token |
-| `devto` (v1.1) | `/api/articles?top=1` | reactions | public |
+| `devto` | public Articles API `/api/articles?top=7` (week) | reactions, comments | no key needed |
 
 Rules: prefer official APIs or RSS over HTML scraping. Endpoints may change, so every collector has a contract test with a recorded fixture and a `doctor` check.
 

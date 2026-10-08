@@ -56,7 +56,7 @@ export async function collectCategory(
   slug: string,
   sources: CategorySource[],
   limit: number = CATEGORY_MAX_ITEMS,
-  /** Credentials the registry entry cannot carry (e.g. from env). */
+  /** Env-provided keys the registry entry cannot carry (merged under explicit params). */
   extraConfig: SourceConfig = {},
 ): Promise<CategoryCollectResult> {
   const keys: SourceKey[] = [];
@@ -76,8 +76,8 @@ export async function collectCategory(
     if (!keys.includes(source.collector)) keys.push(source.collector);
     configs[source.collector] = mergeCategoryConfig(configs[source.collector], source);
   }
-  if (configs["reddit"]) configs["reddit"] = { ...extraConfig, ...configs["reddit"] };
   if (keys.length === 0) return { items: [], stats: skipped };
+  for (const key of keys) configs[key] = { ...extraConfig, ...configs[key] };
   const out = await runCollectors(ctx, {
     keys,
     limits: Object.fromEntries(keys.map((key) => [key, limit])),
