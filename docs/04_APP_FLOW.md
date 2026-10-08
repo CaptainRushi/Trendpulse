@@ -63,14 +63,14 @@ sequenceDiagram
 
 ## 3. Manual run flow
 
-1. User clicks **Run now** → `POST /api/runs {stages:["collect","sort"]}`.
+1. User clicks **Run now** → `POST /api/runs {categories:["ai","finance"]}` (default: all `my_categories`; empty selection blocks with `NO_CATEGORIES_SELECTED`).
 2. Server checks lock. If locked → 409, UI toast "A run is already in progress" with link to it.
 3. Server returns `run_id`; UI opens SSE `/api/runs/:id/stream` and shows the status pill and Runs detail.
 4. Live events update stage stepper and per-source table.
 5. On `done`, UI invalidates queries; Today refetches; toast "48 topics ready".
 
 **Variants**
-- **Re-sort only:** `POST /api/runs {stages:["sort"], date:"2026-09-30"}` reads that day's raw items from state and re-runs stages 6–9. Old sorted rows for that date and older `prompt_version`/model are kept; the newest set is flagged `is_latest=TRUE`.
+- **Re-sort only:** re-runs the select + sort stages over that day's items. Old sorted rows for that date are kept; the newest set per (`run_date`, category) is flagged `is_latest=TRUE`.
 - **Retry failed stage:** `POST /api/runs/:id/retry` resumes from first non-`done` stage.
 - **Single source:** `POST /api/runs {sources:["reddit"]}` for testing.
 

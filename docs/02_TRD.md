@@ -163,20 +163,21 @@ Concurrency: `LLM_CONCURRENCY` default 2. Timeout default 90 s.
 
 ## 6. Pipeline
 
-Stages, in order, each recorded in `run_stages`:
+Stages, in order, each recorded in `run_stages` (Doc 19: per-category top-5 sets, score before write):
 
 | # | Stage | Detail |
 |---|-------|--------|
-| 1 | `collect` | Run enabled collectors in parallel (limit 4). Stats per source |
+| 1 | `collect` | Run only the selected categories' registry sources (plus general sources with `INCLUDE_GENERAL_SOURCES`); per-category isolation with `category_runs` rows |
 | 2 | `normalize` | Canonical URL (strip utm/fbclid, lowercase host, drop fragment), trim, cap snippet at 500 chars, detect language, compute `content_hash = sha1(canonical_url or normalized_title)` |
 | 3 | `dedupe` | Drop hash seen in last `DEDUPE_DAYS` (SQLite `seen_items`). Within run, merge near-duplicate titles (trigram Jaccard ≥ 0.85), keep highest engagement, remember merged sources |
-| 4 | `engagement_norm` | Per source, percentile rank of engagement inside this run → 0..1. Sources without engagement use position-based score `1 - pos/N` |
-| 5 | `persist_raw` | Append to `raw_trends` in batches of ≤ 500 rows; record in `seen_items` **after** sheet write succeeds |
-| 6 | `sort_map` | Split unsorted items into batches of `SORT_BATCH_SIZE` (default 30). Jev returns topics per batch |
-| 7 | `sort_reduce` | Jev merges topics across batches (input: titles + summaries + item ids), removes duplicates, final ordering hints |
-| 8 | `score` | Code computes final `trend_score`, ranks, keeps top `TOP_N` (default 50) |
-| 9 | `persist_sorted` | Append `sorted_trends` rows and one `daily_digest` row |
-| 10 | `finalize` | Write `runs_log`, invalidate cache, retention job, emit SSE `done` |
+| 4 | `select` | Append new rows to `raw_trends` (batches ≤ 500, `seen_items` after sheet write); assemble the working set = new rows + stored rows with cached Jev labels in selected categories (no inserts, so reruns add ~0 rows) |
+| 5 | `sort_classify` | Jev questions per docs/11 for the assembled items only (cache first, budget, fallback). Unselected categories are never sent to Jev |
+| 6 | `sort_assign` | Exactly one category per item: Jev category ≥ 0.6 and selected → it; ≥ 0.6 unselected → excluded (`off_category`, raw kept); < 0.6 → the source's `target_category` (or excluded). Counts assigned/off_category/low-confidence-by-target |
+| 7 | `sort_cluster` | Cluster within each category only (trigram + Jev `same_story` for borderline pairs); cluster ids prefixed per partition |
+| 8 | `score` | Code computes final `trend_score` (formula §7, unchanged) on placeholder text per category partition; ranks restart at 1 per category; keep top `TOP_PER_CATEGORY` (default 5) cluster ids per category |
+| 9 | `sort_write` | Writer runs only for the top clusters (batches ≤ `SORT_BATCH_SIZE`); zod + repair + split + fallback text; total writer failure falls back without crashing |
+| 10 | `persist_sorted` | Append ≤ `TOP_PER_CATEGORY` rows per category with rank 1..n in-category; `is_latest` flips per (`run_date`, category) only; `topic_index` updated; digest written by full runs only |
+| 11 | `finalize` | Write `runs_log`, invalidate cache, retention job, emit SSE `done` |
 
 **Resumability:** stage results are checkpointed in SQLite (`run_stages.status`, `items_run` table holds normalized items and sort status). Restarting a `running` run resumes from the first non-`done` stage. Re-sort only = run stages 6–9 on items of a chosen date.
 

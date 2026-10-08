@@ -30,6 +30,8 @@ Row 1 is a frozen header. All timestamps ISO-8601 UTC (`2026-09-30T06:02:11Z`). 
 | P | `content_hash` | string | sha1 |
 | Q | `merged_sources` | string | JSON array of other sources merged in dedupe |
 | R | `extraction_model` | string | filled only when LLM extraction used |
+| S | `source_label` | string | human label for the source (feed name, subreddit) |
+| T | `target_category` | string | category whose source found the item (Doc 19); null = general |
 
 ### 1.2 `sorted_trends` (append-only, latest set flagged)
 
@@ -38,7 +40,7 @@ Row 1 is a frozen header. All timestamps ISO-8601 UTC (`2026-09-30T06:02:11Z`). 
 | A | `topic_id` | string | ULID |
 | B | `run_id` | string | |
 | C | `run_date` | date | `YYYY-MM-DD` in app timezone |
-| D | `rank` | integer | 1 = best |
+| D | `rank` | integer | rank within the category set (1 = best, 1..n) |
 | E | `title` | string | ≤ 140 |
 | F | `summary` | string | ≤ 280 |
 | G | `category` | enum | Tech, AI, Business, Finance, Science, Health, Politics, World, Sports, Entertainment, Culture, Gaming, Lifestyle, Other |
@@ -58,10 +60,11 @@ Row 1 is a frozen header. All timestamps ISO-8601 UTC (`2026-09-30T06:02:11Z`). 
 | U | `jev_model` | string | |
 | V | `prompt_version` | string | e.g. `v1` |
 | W | `sorted_at` | datetime | |
-| X | `is_latest` | boolean | `TRUE` for newest sort of that date |
+| X | `is_latest` | boolean | `TRUE` for the newest set of that (`run_date`, category) |
 | Y | `hidden` | boolean | user can set TRUE in the sheet to hide on dashboard |
+| Z | `scope` | string | legacy Doc-17 column, unused (old scoped rows read as `legacy` and never join a category set) |
 
-When a re-sort happens, the app appends the new set, then flips `is_latest` of older rows of that date to `FALSE` with one `batchUpdate` (the only update the app performs, done by scanning `run_date` + `is_latest` columns, not by remembered row numbers).
+When a set is (re-)sorted, the app appends the new rows, then flips `is_latest` of older rows with the same date **and category** to `FALSE` with one `batchUpdate` (the only update the app performs, done by scanning `run_date` + `category` + `is_latest` columns, not by remembered row numbers). Refreshing one category replaces only that category's set.
 
 ### 1.3 `daily_digest`
 
@@ -81,7 +84,7 @@ When a re-sort happens, the app appends the new set, then flips `is_latest` of o
 
 ### 1.4 `runs_log`
 
-`run_id, started_at, finished_at, trigger (cron|manual|catchup), status, stages_json, source_stats_json, items_collected, items_new, topics_count, llm_calls, tokens_in, tokens_out, errors_json, app_version`.
+`run_id, started_at, finished_at, trigger (cron|manual|catchup), status, stages_json, source_stats_json, items_collected, items_new, topics_count, llm_calls, tokens_in, tokens_out, errors_json, app_version, categories` (categories = the run's selected slugs; Doc 19).
 
 ### 1.5 `archive_YYYY_MM`
 Same columns as `raw_trends`. Created on demand by retention.

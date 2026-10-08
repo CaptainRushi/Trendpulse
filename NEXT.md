@@ -1,5 +1,15 @@
 # NEXT.md — Day 2 and after (from STEP 10, 2026-10-03)
 
+## Doc 19 Top-5-per-category (built 2026-10-06..07, branch top5-per-category Q0..Q7)
+
+Today shows the top 5 topics per selected category (`my_categories`, max 6);
+only those categories are scraped/classified/written. Live-verified 2026-10-08
+(ai+finance: 162 items, 10 topics, ~160 real Jev calls, ~$0.01; writer gateway
+was down so fallback text + digest skipped — restart the gateway on
+`http://localhost:20128/v1` for writer text and digests). Open items: axe scan
+is manual (no axe in unit tests; Playwright a11y passes).
+Merge `top5-per-category` when ready (Q0..Q7 commits, all gates green).
+
 Day-1 board: `npm run verify` **23/23 PASS** (fake). Live: 12 pass · 1 fail · 10 skip
 (`npm run verify:live`; the fail is OmniRoute down, the skips need a sheet).
 

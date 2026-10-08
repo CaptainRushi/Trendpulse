@@ -521,3 +521,8 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Done:** fake-seed gains finance/science sets + branch-label fixtures + my_categories; top5.spec.ts (mocked-API e2e: run posts, refresh isolation, add/remove, onboarding, TOP5-26 viewports+screenshots); today/catsort/smoke/a11y e2e updated to panels; pulse.spec.ts deleted (tested the cut live-graph hero; LiveChart unit tests PULSE-20..23 stay).
 - **Live run 01M4CT7K (2026-10-08, ai+finance, real collectors + real Jev):** status partial in 97s; ai ok (90 collected, 81 kept, 5 topics scores 66-71); finance ok (72 collected, 51 kept, 5 topics scores 62-64); assigned 132, off_category excluded 28 (17.5%), low-conf-by-target 9; ~160 Jev calls (~$0.01); all sources ok (github/hn/rss), reddit blocked without OAuth (by design); scores in the 60s without general sources, as predicted.
 - **Deviations:** writer gateway :20128 down, so all 10 topics carry fallback text and the digest was skipped (TOP5-19 path live in production) — run partial, nothing crashed. Screenshots in test-runs/evidence/2026-10-07 (untracked per convention).
+
+## 2026-10-07 — top5-Q7 close-out (Doc 19, ponytail full)
+
+- **Done:** docs/02 stage table replaced with the 11-stage Doc-19 pipeline; docs/05 rank-in-category + trailing columns (target_category, scope-legacy, runs_log.categories); docs/04 run/re-sort flows; docs/10 sorter phase + TOP_PER_CATEGORY; docs/17 superseded-note; NEXT.md Doc-19 entry.
+- **Gates:** lint clean, typecheck clean, server 504/504 (66 files), web 52/52 (12 files), e2e 23/23, verify 23/23 fake. Live: ai+finance run 01M4CT7K (partial, writer down).
