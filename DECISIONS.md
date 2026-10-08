@@ -515,3 +515,9 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Ruling:** TOP5-26 (viewports) moves to Q6 Playwright (JSDOM has no layout); axe not automated (no new heavy deps) — keyboard/roles/live-region covered in TOP5-27, axe manual.
 - **Ruling:** panels poll while a run is active (2.5s) + category_status/sort_rank/done events invalidate; announcements fire on running-to-terminal transitions.
 - **Cost if wrong:** poll/event double-refresh is idempotent (query invalidation); a missed event still resolves on next poll.
+
+## 2026-10-07 — top5-Q6 demo, e2e, live two-category run (Doc 19, ponytail full)
+
+- **Done:** fake-seed gains finance/science sets + branch-label fixtures + my_categories; top5.spec.ts (mocked-API e2e: run posts, refresh isolation, add/remove, onboarding, TOP5-26 viewports+screenshots); today/catsort/smoke/a11y e2e updated to panels; pulse.spec.ts deleted (tested the cut live-graph hero; LiveChart unit tests PULSE-20..23 stay).
+- **Live run 01M4CT7K (2026-10-08, ai+finance, real collectors + real Jev):** status partial in 97s; ai ok (90 collected, 81 kept, 5 topics scores 66-71); finance ok (72 collected, 51 kept, 5 topics scores 62-64); assigned 132, off_category excluded 28 (17.5%), low-conf-by-target 9; ~160 Jev calls (~$0.01); all sources ok (github/hn/rss), reddit blocked without OAuth (by design); scores in the 60s without general sources, as predicted.
+- **Deviations:** writer gateway :20128 down, so all 10 topics carry fallback text and the digest was skipped (TOP5-19 path live in production) — run partial, nothing crashed. Screenshots in test-runs/evidence/2026-10-07 (untracked per convention).

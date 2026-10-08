@@ -1,10 +1,11 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { mockApi, mockEmptyRuns } from "./fixtures.js";
+import { mockApi, mockEmptyRuns, mockTodayDefaults } from "./fixtures.js";
 
 test.beforeEach(async ({ page }) => {
   await mockEmptyRuns(page);
+  await mockTodayDefaults(page);
 });
 
 async function expectNoSeriousViolations(page: Page, url: string): Promise<void> {

@@ -1,40 +1,39 @@
 import { expect, test } from "@playwright/test";
-import { mockApi, mockEmptyRuns } from "./fixtures.js";
+import { mockApi, mockEmptyRuns, mockTop5, top5State } from "./fixtures.js";
 
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
   await mockEmptyRuns(page);
+  await mockTop5(page, top5State());
 });
 
-test("Today renders hero blocks and ranked topics with zero clicks", async ({ page }) => {
+test("Today renders hero blocks and category panels with zero clicks", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("today's trends")).toBeVisible();
-  for (const label of ["topics", "items", "sources", "ai cost"]) {
+  for (const label of ["categories", "topics", "items", "ai cost"]) {
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }
-  await expect(page.getByText("Alpha launch day")).toBeVisible();
-  await expect(page.getByText("Beta markets rally")).toBeVisible();
+  await expect(page.getByLabel("ai trends", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("ai trends", { exact: true }).getByRole("button", { name: /Open / })).toHaveCount(5);
 });
 
-test("category chip narrows the list and syncs the URL", async ({ page }) => {
+test("removing a chip persists it and hides the panel", async ({ page }) => {
+  const state = top5State();
+  await mockTop5(page, state);
   await page.goto("/");
-  await expect(page.getByText("Beta markets rally")).toBeVisible();
-  await page.getByRole("button", { name: "finance", exact: true }).click();
-  await expect(page.getByText("Beta markets rally")).toBeVisible();
-  await expect(page.getByText("Alpha launch day")).toHaveCount(0);
-  await expect(page).toHaveURL(/category=Finance/);
-  await page.getByRole("button", { name: "clear filters" }).click();
-  await expect(page).not.toHaveURL(/category=Finance/);
-  await expect(page.getByText("Alpha launch day")).toBeVisible();
+  await expect(page.getByLabel("ai trends", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "remove ai" }).click();
+  await expect.poll(() => state.my, { timeout: 10000 }).toEqual(["finance"]);
+  await expect(page.getByLabel("ai trends", { exact: true })).toHaveCount(0);
 });
 
 test("clicking a row opens the panel; Escape closes it", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /Alpha launch day/ }).click();
+  await page.getByLabel("ai trends", { exact: true }).getByRole("button", { name: /ai title 0/ }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("score breakdown");
-  await expect(dialog.getByRole("link", { name: /Alpha launch day/ })).toHaveAttribute(
+  await expect(dialog.getByRole("link", { name: /ai title 0/ })).toHaveAttribute(
     "href",
     "https://a.example.com/1",
   );

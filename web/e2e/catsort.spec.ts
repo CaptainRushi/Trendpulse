@@ -3,7 +3,7 @@
  * CATRUN-e2e, SORTANIM-12 perf). Frontend real, API mocked per repo pattern.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { mockApi } from "./fixtures.js";
+import { mockApi, mockTop5, top5State } from "./fixtures.js";
 
 const TOP = {
   date: "2026-10-04",
@@ -49,6 +49,9 @@ const SORT_EVENTS = [
 
 async function mockCatsort(page: Page, opts: { activeRun?: string | null; scopeTopics?: unknown } = {}): Promise<void> {
   await mockApi(page);
+  const state = top5State();
+  state.my = ["ai", "finance"];
+  await mockTop5(page, state);
   await page.route("**/api/today/top?*", (route) => route.fulfill({ json: TOP }));
   await page.route("**/api/live/samples?*", (route) =>
     route.fulfill({ json: { date: "2026-10-04", scope: "all", baseline_at: null, series: [] } }),
@@ -108,22 +111,31 @@ test("SORTANIM-13 animation plays: dots, bins, cards, fade", async ({ page }) =>
   await expect(page.getByText("ai · 2", { exact: false }).first()).toBeVisible();
 });
 
-test("CATRUN e2e scope isolation: picker drives URL and API", async ({ page }) => {
+test("CATRUN e2e my-categories drive panels and runs", async ({ page }) => {
   await mockCatsort(page);
-  let lastTrendsUrl = "";
-  await page.route("**/api/trends?*", async (route) => {
-    lastTrendsUrl = route.request().url();
-    await route.continue();
+  const posts: unknown[] = [];
+  await page.route("**/api/runs", async (route) => {
+    if (route.request().method() === "POST") {
+      let body: unknown = {};
+      try {
+        body = JSON.parse(route.request().postData() ?? "{}") as unknown;
+      } catch {
+        body = {};
+      }
+      posts.push(body);
+      await route.fulfill({ json: { run_id: "run-99" } });
+    } else {
+      await route.continue();
+    }
   });
   await page.goto("/");
-  const picker = page.getByRole("region", { name: "Category scope" });
-  await picker.getByRole("button", { name: "ai", exact: true }).click();
-  await picker.getByRole("button", { name: "finance", exact: true }).click();
-  await expect(page).toHaveURL(/scope=ai(%2B|\+)finance/);
-  await expect(page.getByRole("button", { name: /run for ai \+ finance/ })).toBeVisible();
-  await page.getByRole("button", { name: /run for ai \+ finance/ }).click();
-  await page.waitForTimeout(500);
-  expect(lastTrendsUrl).toContain("scope=");
+  const row = page.getByRole("group", { name: "my categories" });
+  await expect(row.getByRole("button", { name: "remove ai" })).toBeVisible();
+  await expect(page.getByLabel("ai trends", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "remove finance" }).click();
+  await page.getByRole("region", { name: "My categories" }).getByRole("button", { name: "run now", exact: true }).click();
+  await expect.poll(() => posts.length, { timeout: 10000 }).toBe(1);
+  expect(posts[0]).toEqual({ categories: ["ai"] });
 });
 
 test("SORTANIM-12 performance: 300 events leave no long tasks", async ({ page }) => {
