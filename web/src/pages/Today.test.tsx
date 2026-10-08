@@ -190,8 +190,8 @@ describe("Today page", () => {
     for (const label of ["categories", "topics", "items", "ai cost"]) {
       expect(screen.getByText(label)).not.toBeNull();
     }
-    expect(await screen.findAllByText("Alpha launch day")).toHaveLength(2);
-    expect(screen.getByText("Beta markets rally")).not.toBeNull();
+    expect(await screen.findAllByText("Alpha launch day")).toHaveLength(3);
+    expect(await screen.findAllByText("Beta markets rally")).toHaveLength(2);
     expect(await screen.findByLabelText("tech trends")).not.toBeNull();
     expect(screen.getByLabelText("finance trends")).not.toBeNull();
   });
@@ -199,7 +199,7 @@ describe("Today page", () => {
   it("UI-03 my-category chips remove through the api", async () => {
     stubFetch([topic(), T2()]);
     renderToday();
-    expect(await screen.findByText("Beta markets rally")).not.toBeNull();
+    expect(await screen.findAllByText("Beta markets rally")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "remove tech" }));
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "remove tech" })).toBeNull();
@@ -233,7 +233,7 @@ describe("Today page", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(2);
+    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(3);
     expect(container.querySelector("img")).toBeNull();
   });
 });

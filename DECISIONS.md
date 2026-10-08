@@ -526,3 +526,9 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 
 - **Done:** docs/02 stage table replaced with the 11-stage Doc-19 pipeline; docs/05 rank-in-category + trailing columns (target_category, scope-legacy, runs_log.categories); docs/04 run/re-sort flows; docs/10 sorter phase + TOP_PER_CATEGORY; docs/17 superseded-note; NEXT.md Doc-19 entry.
 - **Gates:** lint clean, typecheck clean, server 504/504 (66 files), web 52/52 (12 files), e2e 23/23, verify 23/23 fake. Live: ai+finance run 01M4CT7K (partial, writer down).
+
+## 2026-10-07 — graph restored on Today (follow-up, ponytail full)
+
+- **Ruling:** restored the live growth chart per-category (Q5.4 un-cut on request): GET /api/live/samples gains ?category= (slug, 400 unknown); writeLatestSet baselines every category rank-1 so #1s get sampled; Today renders one LiveChart with one series per selected category's #1 + scores fallback + sample-now + per-category no-samples notes. No follow-the-panel selection state (no such state exists).
+- **Collateral fix:** hidden LiveChart data table widened 375px viewports (absolute table without left + nowrap cells); pinned with table-layout fixed and wrapped cells.
+- **Tests:** TOP5-29 (server filter + baselining), TOP5-30 (web section); suite 506/506 server, 53/53 web, e2e 23/23; lint+typecheck clean.

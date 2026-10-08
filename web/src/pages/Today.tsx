@@ -22,6 +22,7 @@ import {
 import { useActiveRun, useEstimate } from "../hooks/useLive";
 import { useRunEvents } from "../hooks/useEventSource";
 import { CategoryPanels, OnboardingCard } from "../components/CategoryPanels";
+import { LiveSection } from "../components/LiveSection";
 import { MyCategories } from "../components/MyCategories";
 import { SortingStage } from "../components/SortingStage";
 import { todayAppDate } from "../lib/format";
@@ -207,6 +208,10 @@ export function Today(): React.JSX.Element {
           <Block variant="lime" value={spend !== null ? `$${spend.toFixed(2)}` : "—"} label="ai cost" />
         </BlockGrid>
       </section>
+
+      {panels.data && panels.data.categories.length > 0 ? (
+        <LiveSection date={date} panels={panels.data.categories} onOpen={(id) => { setOpenId(id); }} />
+      ) : null}
 
       <section aria-label="My categories">
         {myCats.isPending ? <SkeletonGrid /> : null}

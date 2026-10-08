@@ -271,7 +271,7 @@ describe("PULSE-26 hostile titles render as inert text", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(2);
+    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(3);
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
   });

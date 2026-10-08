@@ -63,8 +63,17 @@ export function useEstimate(categories: string[], mode: string): ReturnType<type
   });
 }
 
-export function useActiveRun(): ReturnType<typeof useQuery<{ run_id: string | null; scope: string }>> {
+export function useCategorySamples(date: string | null, category: string): ReturnType<typeof useQuery<PulseSamples>> {
   return useQuery({
+    queryKey: ["live-category", date, category],
+    queryFn: () => api.get<PulseSamples>(`/api/live/samples?date=${date ?? ""}&category=${category}&top=1`),
+    enabled: date !== null && category !== "",
+    staleTime: STALE_MS,
+    retry: false,
+  });
+}
+
+export function useActiveRun(): ReturnType<typeof useQuery<{ run_id: string | null; scope: string }>> {  return useQuery({
     queryKey: ["active-run"],
     queryFn: () => api.get<{ run_id: string | null; scope: string }>("/api/runs/active"),
     refetchInterval: 10_000,

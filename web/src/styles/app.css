@@ -1117,6 +1117,17 @@ textarea.input {
   white-space: nowrap;
 }
 
+/* Hidden chart data tables must never widen the page on narrow screens. */
+table.visually-hidden {
+  left: 0;
+  table-layout: fixed;
+  width: 100%;
+}
+
+table.visually-hidden td {
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .pulse-flash {
     animation: pulse-flash 1.2s ease-out 1;

@@ -121,7 +121,9 @@ export function writeLatestSet(
   let baselined = 0;
   ranked.forEach((topic, i) => {
     insertTopic.run(topic.topic_id, runId, runDate, topic.rank, topic.title, topic.trend_score, JSON.stringify(topic.evidence_item_ids), sampledAt, topic.category ?? "Other");
-    if (i < topN) {
+    // Top-N overall plus every category's rank 1, so each panel's chart
+    // topic gets sampled on the next cycle.
+    if (i < topN || topic.rank === 1) {
       const items = pickSampledItems(topic.evidence_item_ids, baselines);
       if (items.length > 0) {
         const total = items.reduce((sum, item) => sum + item.baseline, 0);
@@ -182,6 +184,14 @@ export function latestSet(db: StateDb, runDate: string, scope = "all"): IndexedT
   const rows = db
     .prepare("SELECT * FROM topic_index WHERE run_date = ? AND scope_key = ? AND is_latest = 1 ORDER BY rank")
     .all(runDate, scope) as Parameters<typeof toIndexed>[0][];
+  return rows.map(toIndexed);
+}
+
+/** Latest set for one Jev category label (Doc 19), rank order, at most `limit`. */
+export function latestSetForCategory(db: StateDb, runDate: string, category: string, limit: number): IndexedTopic[] {
+  const rows = db
+    .prepare("SELECT * FROM topic_index WHERE run_date = ? AND category = ? AND is_latest = 1 ORDER BY rank LIMIT ?")
+    .all(runDate, category, limit) as Parameters<typeof toIndexed>[0][];
   return rows.map(toIndexed);
 }
 

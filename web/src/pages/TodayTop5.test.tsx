@@ -113,6 +113,24 @@ function stubApi(state: MockState): void {
         return json({ categories: panels });
       }
       if (path === "/api/digest") return json(DIGEST);
+      if (path === "/api/live/samples") {
+        const category = new URL(url, "http://x").searchParams.get("category") ?? "";
+        if (category === "ai") {
+          return json({
+            date: "2026-09-30", scope: "all", category, baseline_at: "2026-09-30T06:00:00.000Z",
+            series: [
+              {
+                topic_id: "ai-t0", title: "ai title 0", rank: 1, has_live_metric: true, sources: ["rss"],
+                points: [
+                  { t: "2026-09-30T06:00:00.000Z", index: 100, total: 40 },
+                  { t: "2026-09-30T06:20:00.000Z", index: 154, total: 61.6 },
+                ],
+              },
+            ],
+          });
+        }
+        return json({ date: "2026-09-30", scope: "all", category, baseline_at: null, series: [] });
+      }
       if (path === "/api/runs") return json({ runs: [], total: 0 });
       if (path === "/api/runs/active") return json({ run_id: null });
       if (path === "/api/runs/estimate") return json(ESTIMATE);
@@ -300,8 +318,7 @@ describe("TOP5-27 keyboard and live announcements", () => {
   });
 });
 
-describe("TOP5-28 hostile titles inert", () => {
-  it("panel rows render hostile text without elements", async () => {
+describe("TOP5-28 hostile titles inert", () => {  it("panel rows render hostile text without elements", async () => {
     const state: MockState = {
       my: ["ai"],
       panels: [
@@ -324,7 +341,27 @@ describe("TOP5-28 hostile titles inert", () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(2);
+    expect(await screen.findAllByText('<img src=x onerror="alert(1)">')).toHaveLength(3);
     expect(container.querySelector("img")).toBeNull();
+  });
+});
+describe("TOP5-30 live graph shows one series per category number one", () => {
+  it("charts sampled number ones; unsampled categories get a note", async () => {
+    const state = fullState();
+    stubApi(state);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ToastProvider>
+          <MemoryRouter initialEntries={["/"]}>
+            <Today />
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+    const section = await screen.findByRole("region", { name: "Live growth" });
+    await waitFor(() => {
+      expect(section.querySelector("svg")?.getAttribute("aria-label")).toContain("ai title 0 +54");
+    });
+    expect(section.textContent).toContain("finance #1 has no live numbers yet");
   });
 });

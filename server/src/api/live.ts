@@ -8,18 +8,20 @@ import { ApiError, badRequest } from "./errors.js";
 import type { AppContext } from "./context.js";
 import { appEvents } from "./context.js";
 import { streamRunEvents } from "./sse.js";
-import { latestSet } from "../pulse/index.js";
+import { latestSet, latestSetForCategory } from "../pulse/index.js";
 import { readBaselines } from "../pulse/index.js";
-import { normalizeScope } from "../categories/registry.js";
+import { CATEGORY_REGISTRY, CATEGORY_SLUGS, normalizeScope } from "../categories/registry.js";
 import { isPipelineActive } from "../pulse/sampler.js";
 
 const SamplesQuery = z.object({
   date: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
     .optional(),
   top: z.coerce.number().int().min(1).max(10).optional(),
   scope: z.string().optional(),
+  /** Doc-19 per-category set: lowercase slug (one category's latest). */
+  category: z.string().optional(),
 });
 
 export function registerLive(app: FastifyInstance, ctx: AppContext): void {
@@ -36,7 +38,18 @@ export function registerLive(app: FastifyInstance, ctx: AppContext): void {
         return { date, scope: parsed.data.scope, baseline_at: null, series: [] };
       }
     }
-    const set = latestSet(ctx.db, date, scope).slice(0, parsed.data.top ?? ctx.config.pulseTopN);
+    const limit = parsed.data.top ?? ctx.config.pulseTopN;
+    let set: ReturnType<typeof latestSet> = [];
+    let category: string | undefined;
+    if (parsed.data.category !== undefined && parsed.data.category !== "") {
+      const slug = parsed.data.category.trim().toLowerCase();
+      const entry = (CATEGORY_SLUGS as readonly string[]).includes(slug) ? CATEGORY_REGISTRY[slug] : undefined;
+      if (!entry) throw badRequest(`Invalid query: category unknown category '${parsed.data.category}'.`);
+      category = slug;
+      set = latestSetForCategory(ctx.db, date, entry.label, limit);
+    } else {
+      set = latestSet(ctx.db, date, scope).slice(0, limit);
+    }
     const baselines = readBaselines(ctx.db, date);
     const baselineAt = ctx.db
       .prepare("SELECT MIN(sampled_at) AS at FROM topic_samples WHERE sampled_at >= ? AND sampled_at < ?")
@@ -61,7 +74,7 @@ export function registerLive(app: FastifyInstance, ctx: AppContext): void {
         points,
       };
     });
-    return { date, scope, baseline_at: baselineAt?.at ?? null, series };
+    return { date, scope, ...(category ? { category } : {}), baseline_at: baselineAt?.at ?? null, series };
   });
 
   app.get("/api/live/stream", (request, reply) => {
