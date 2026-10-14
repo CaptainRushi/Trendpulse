@@ -20,7 +20,7 @@
     "test": "npm run test --workspace=server",
     "test:web": "npm run test --workspace=@trendpulse/web",
     "test:e2e": "npm run test:e2e --workspace=@trendpulse/web",
-    "lint": "npm run lint --workspace=server && npm run lint --workspace=web && npm run lint --workspace=@trendpulse/shared",
+    "lint": "npm run build --workspace=@trendpulse/shared && npm run lint --workspace=server && npm run lint --workspace=web && npm run lint --workspace=@trendpulse/shared",
     "typecheck": "npm run typecheck --workspace=@trendpulse/shared && npm run typecheck --workspace=server && npm run typecheck --workspace=@trendpulse/web",
     "doctor": "npm run doctor --workspace=server",
     "setup": "npm run setup --workspace=server",
