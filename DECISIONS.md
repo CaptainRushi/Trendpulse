@@ -538,3 +538,9 @@ Conflicts: Doc 17 scope code (8 commits) gets migrated, not deleted: scope_key c
 - **Done:** dev.to collector implemented + verified live (50 items); env keys now reach collectors (they never did — only config_json arrived); youtube/producthunt collectors implemented key-gated with COL-14 skip messages (shapes unverified live, no keys to record against).
 - **Ruling:** youtube/producthunt ship on documented API shapes marked unverified rather than staying stubs — inert without keys, ready the moment keys land; verify live then.
 - **Still needs the user:** REDDIT_CLIENT_ID+SECRET (reddit.com/prefs/apps, script app), YOUTUBE_API_KEY (console.cloud.google.com, YouTube Data API v3), PRODUCTHUNT_TOKEN (api.producthunt.com/v2/oauth/applications), GITHUB_TOKEN optional (github.com/settings/tokens, raises search quota). Reddit without OAuth stays blocked (403) by design.
+
+## 2026-10-14 - Node floor raised 20 to 22
+
+- **Decision:** engines, CI, Dockerfile, READMEs, and doctor all require Node 22+ now (was 20+).
+- **Reason:** locked jsdom@30/undici@8 need worker_threads.markAsUncloneable (Node 22.3.0+, absent on 20); CI on Node 20 crashed 28 suites at undici import (webidl.util.markAsUncloneable is not a function) while Node 26 passed. Deps moved past 20 (jsdom engines ^22.22.2), so the floor was stale - not a code bug.
+- **Left stale on purpose:** docs/0x spec files still say Node 20 - historical records, not runtime instructions.

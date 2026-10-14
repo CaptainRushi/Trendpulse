@@ -34,8 +34,8 @@ function warn(label: string, hint: string): void {
 }
 
 const major = Number(process.versions.node.split(".")[0]);
-if (Number.isNaN(major) || major < 20) {
-  fail(`node version (${process.versions.node})`, "Install Node.js 20 or newer: https://nodejs.org/");
+if (Number.isNaN(major) || major < 22) {
+  fail(`node version (${process.versions.node})`, "Install Node.js 22 or newer: https://nodejs.org/");
 } else {
   ok(`node version (${process.versions.node})`);
 }

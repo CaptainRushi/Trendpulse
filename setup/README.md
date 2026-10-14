@@ -4,7 +4,7 @@ Me caveman. You want run TrendPulse. Follow steps. Done.
 
 ## Need first
 
-- Node 20+ (`node --version` show v20+)
+- Node 22+ (`node --version` show v22+)
 - npm (come with Node)
 - git
 - Google account (for Sheet store)

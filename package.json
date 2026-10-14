@@ -5,7 +5,7 @@
   "type": "module",
   "description": "TrendPulse — localhost daily trends collector, Jev sorter, Google Sheets store, dashboard.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "workspaces": [
     "shared",

@@ -6,7 +6,7 @@ every morning. No accounts, no cloud, no tracking.
 
 ## 10-minute quick start
 
-Prerequisites: **Node.js 20+** and **npm** (`node --version` should print v20 or newer),
+Prerequisites: **Node.js 22+** and **npm** (`node --version` should print v22 or newer),
 plus a Google account (for the Sheet) and an OpenAI-compatible LLM endpoint
 (OmniRoute, or anything that speaks `/chat/completions`).
 
